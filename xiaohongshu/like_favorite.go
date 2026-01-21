@@ -236,29 +236,52 @@ func (a *FavoriteAction) toggleFavorite(page *rod.Page, feedID string, targetCol
 	return nil
 }
 
-// getInteractState 从 __INITIAL_STATE__ 读取笔记的点赞/收藏状态
+// getInteractState 从页面读取笔记的点赞/收藏状态（优先用DOM，fallback到__INITIAL_STATE__）
 func (a *interactAction) getInteractState(page *rod.Page, feedID string) (liked bool, collected bool, err error) {
-
+	// 优先使用 DOM 判断状态（更可靠）
 	result := page.MustEval(`() => {
-		if (window.__INITIAL_STATE__ &&
-		    window.__INITIAL_STATE__.note &&
-		    window.__INITIAL_STATE__.note.noteDetailMap) {
-			const noteDetailMap = window.__INITIAL_STATE__.note.noteDetailMap;
-			// 获取第一个键（可能是 undefined 或实际的 feedID）
-			const keys = Object.keys(noteDetailMap);
-			if (keys.length > 0) {
-				const firstKey = keys[0];
-				const detail = noteDetailMap[firstKey];
-				if (detail && detail.note && detail.note.interactInfo) {
-					return JSON.stringify({
-						liked: detail.note.interactInfo.liked,
-						collected: detail.note.interactInfo.collected
-					});
+		const likeBtn = document.querySelector('.like-wrapper .like-lottie, .like-wrapper');
+		const collectBtn = document.querySelector('.collect-wrapper .collect-icon, .collect-wrapper');
+
+		let liked = false;
+		let collected = false;
+
+		// 通过类名或属性判断点赞状态
+		if (likeBtn) {
+			liked = likeBtn.classList.contains('active') ||
+				likeBtn.classList.contains('liked') ||
+				likeBtn.closest('.like-wrapper')?.classList.contains('active') ||
+				likeBtn.getAttribute('data-active') === 'true';
+		}
+
+		// 通过类名或属性判断收藏状态
+		if (collectBtn) {
+			collected = collectBtn.classList.contains('active') ||
+				collectBtn.classList.contains('collected') ||
+				collectBtn.closest('.collect-wrapper')?.classList.contains('active') ||
+				collectBtn.getAttribute('data-active') === 'true';
+		}
+
+		// 如果DOM判断失败，尝试从 __INITIAL_STATE__ 读取
+		if (!liked && !collected) {
+			if (window.__INITIAL_STATE__ &&
+				window.__INITIAL_STATE__.note &&
+				window.__INITIAL_STATE__.note.noteDetailMap) {
+				const noteDetailMap = window.__INITIAL_STATE__.note.noteDetailMap;
+				const keys = Object.keys(noteDetailMap);
+				if (keys.length > 0) {
+					const detail = noteDetailMap[keys[0]];
+					if (detail && detail.note && detail.note.interactInfo) {
+						liked = detail.note.interactInfo.liked || false;
+						collected = detail.note.interactInfo.collected || false;
+					}
 				}
 			}
 		}
-		return "";
+
+		return JSON.stringify({liked: liked, collected: collected});
 	}`).String()
+
 	if result == "" {
 		return false, false, myerrors.ErrNoFeedDetail
 	}
