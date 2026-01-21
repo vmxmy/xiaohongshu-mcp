@@ -967,6 +967,184 @@ rm ~/.xiaohongshu/cookies.json
 **Q: 为什么要分成两个程序？**
 A: 登录工具需要显示浏览器界面供用户扫码，MCP服务在后台无头运行，性能更好。
 
+---
+
+## 🖥️ 服务器/VPS 部署指南（无 GUI 环境）
+
+在没有图形界面的 Linux 服务器上部署时，由于无法显示浏览器窗口扫码登录，需要采用 **本地登录 + 远程同步** 的方式。
+
+### 部署架构
+
+```
+┌─────────────────┐     cookies.json      ┌─────────────────┐
+│   本地电脑       │  ─────────────────►  │   远程 VPS      │
+│  (有 GUI)       │        scp           │  (无 GUI)       │
+│                 │                      │                 │
+│ xiaohongshu-    │                      │ xiaohongshu-    │
+│ login           │                      │ mcp             │
+└─────────────────┘                      └─────────────────┘
+```
+
+### 步骤 1: 下载程序
+
+在 VPS 上下载对应平台的二进制文件：
+
+```bash
+# 创建目录
+mkdir -p ~/app/xiaohongshu-mcp && cd ~/app/xiaohongshu-mcp
+
+# 下载 Linux AMD64 版本
+wget https://github.com/vmxmy/xiaohongshu-mcp/releases/latest/download/xiaohongshu-mcp-linux-amd64
+wget https://github.com/vmxmy/xiaohongshu-mcp/releases/latest/download/xiaohongshu-login-linux-amd64
+
+# 或 Linux ARM64 版本
+# wget https://github.com/vmxmy/xiaohongshu-mcp/releases/latest/download/xiaohongshu-mcp-linux-arm64
+# wget https://github.com/vmxmy/xiaohongshu-mcp/releases/latest/download/xiaohongshu-login-linux-arm64
+
+# 添加执行权限
+chmod +x xiaohongshu-*
+```
+
+### 步骤 2: 本地登录获取 cookies
+
+在你的**本地电脑**（有 GUI）上运行登录工具：
+
+```bash
+# macOS
+./xiaohongshu-login
+
+# Windows
+xiaohongshu-login.exe
+```
+
+扫码登录成功后，cookies 会保存在当前目录的 `cookies.json` 文件中。
+
+### 步骤 3: 上传 cookies 到 VPS
+
+```bash
+# 使用 scp 上传
+scp cookies.json user@your-vps-ip:~/app/xiaohongshu-mcp/
+
+# 或使用 rsync
+rsync -avz cookies.json user@your-vps-ip:~/app/xiaohongshu-mcp/
+```
+
+### 步骤 4: 安装浏览器依赖
+
+MCP 服务需要 Chromium 浏览器：
+
+```bash
+# Debian/Ubuntu
+sudo apt update && sudo apt install -y chromium-browser
+
+# CentOS/RHEL
+sudo yum install -y chromium
+
+# Alpine
+apk add chromium
+```
+
+### 步骤 5: 启动 MCP 服务
+
+**直接运行：**
+
+```bash
+./xiaohongshu-mcp-linux-amd64
+```
+
+**使用 PM2 管理（推荐）：**
+
+```bash
+# 安装 PM2
+npm install -g pm2
+
+# 创建配置文件
+cat > ecosystem.config.js << 'EOF'
+module.exports = {
+  apps: [{
+    name: 'xiaohongshu-mcp',
+    script: './xiaohongshu-mcp-linux-amd64',
+    cwd: '/home/user/app/xiaohongshu-mcp',
+    interpreter: 'none',
+    exec_mode: 'fork',
+    autorestart: true,
+    max_restarts: 10,
+    restart_delay: 5000
+  }]
+}
+EOF
+
+# 启动服务
+pm2 start ecosystem.config.js
+
+# 设置开机自启
+pm2 save
+pm2 startup
+```
+
+**PM2 常用命令：**
+
+```bash
+pm2 status              # 查看状态
+pm2 logs xiaohongshu-mcp # 查看日志
+pm2 restart xiaohongshu-mcp # 重启服务
+pm2 stop xiaohongshu-mcp    # 停止服务
+```
+
+### 步骤 6: 验证服务
+
+```bash
+# 检查健康状态
+curl http://localhost:18060/health
+
+# 测试 MCP 连接
+curl -X POST http://localhost:18060/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"initialize","params":{},"id":1}'
+```
+
+### Cookies 刷新流程
+
+当 cookies 过期（通常几周到几个月）时，需要重新登录：
+
+```bash
+# 1. 本地重新扫码登录
+./xiaohongshu-login
+
+# 2. 上传新的 cookies 到 VPS
+scp cookies.json user@your-vps-ip:~/app/xiaohongshu-mcp/
+
+# 3. 重启 VPS 上的服务
+ssh user@your-vps-ip "pm2 restart xiaohongshu-mcp"
+```
+
+### 自动化脚本示例
+
+创建一个一键同步脚本 `sync-cookies.sh`：
+
+```bash
+#!/bin/bash
+VPS_HOST="user@your-vps-ip"
+VPS_PATH="~/app/xiaohongshu-mcp"
+
+echo "正在同步 cookies..."
+scp cookies.json ${VPS_HOST}:${VPS_PATH}/
+
+echo "正在重启服务..."
+ssh ${VPS_HOST} "pm2 restart xiaohongshu-mcp"
+
+echo "同步完成！"
+```
+
+### 注意事项
+
+1. **cookies.json 包含敏感信息**，请妥善保管，不要提交到代码仓库
+2. **同一账号不能多端登录**，VPS 服务运行时不要在其他网页端登录
+3. **定期检查登录状态**，可以通过 `check_login_status` 工具监控
+4. **确保 VPS 时区正确**，避免时间差导致的问题
+
+---
+
 ### 更新日志
 
 #### 2026-01-21
