@@ -3,7 +3,6 @@ package xiaohongshu
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -21,8 +20,8 @@ type ActionResult struct {
 
 // 选择器常量
 const (
-	SelectorLikeButton    = ".interact-container .left .like-lottie"
-	SelectorCollectButton = ".interact-container .left .reds-icon.collect-icon"
+	SelectorLikeButton    = ".like-wrapper .like-lottie"
+	SelectorCollectButton = ".collect-wrapper .collect-icon"
 )
 
 // interactActionType 交互动作类型
@@ -50,9 +49,34 @@ func (a *interactAction) preparePage(ctx context.Context, actionType interactAct
 
 	page.MustNavigate(url)
 	page.MustWaitDOMStable()
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
+
+	// 等待 __INITIAL_STATE__ 就绪
+	a.waitForInitialState(page)
 
 	return page
+}
+
+// waitForInitialState 等待页面 __INITIAL_STATE__ 数据就绪
+func (a *interactAction) waitForInitialState(page *rod.Page) {
+	maxRetries := 5
+	for i := 0; i < maxRetries; i++ {
+		result := page.MustEval(`() => {
+			return !!(window.__INITIAL_STATE__ &&
+				window.__INITIAL_STATE__.note &&
+				window.__INITIAL_STATE__.note.noteDetailMap &&
+				Object.keys(window.__INITIAL_STATE__.note.noteDetailMap).length > 0);
+		}`).Bool()
+
+		if result {
+			logrus.Info("__INITIAL_STATE__ 数据就绪")
+			return
+		}
+
+		logrus.Infof("等待 __INITIAL_STATE__ 就绪... (%d/%d)", i+1, maxRetries)
+		time.Sleep(1 * time.Second)
+	}
+	logrus.Warn("__INITIAL_STATE__ 等待超时，继续尝试操作")
 }
 
 func (a *interactAction) performClick(page *rod.Page, selector string) {
@@ -219,7 +243,19 @@ func (a *interactAction) getInteractState(page *rod.Page, feedID string) (liked 
 		if (window.__INITIAL_STATE__ &&
 		    window.__INITIAL_STATE__.note &&
 		    window.__INITIAL_STATE__.note.noteDetailMap) {
-			return JSON.stringify(window.__INITIAL_STATE__.note.noteDetailMap);
+			const noteDetailMap = window.__INITIAL_STATE__.note.noteDetailMap;
+			// 获取第一个键（可能是 undefined 或实际的 feedID）
+			const keys = Object.keys(noteDetailMap);
+			if (keys.length > 0) {
+				const firstKey = keys[0];
+				const detail = noteDetailMap[firstKey];
+				if (detail && detail.note && detail.note.interactInfo) {
+					return JSON.stringify({
+						liked: detail.note.interactInfo.liked,
+						collected: detail.note.interactInfo.collected
+					});
+				}
+			}
 		}
 		return "";
 	}`).String()
@@ -227,22 +263,14 @@ func (a *interactAction) getInteractState(page *rod.Page, feedID string) (liked 
 		return false, false, myerrors.ErrNoFeedDetail
 	}
 
-	// 直接解析为 noteDetailMap
-	var noteDetailMap map[string]struct {
-		Note struct {
-			InteractInfo struct {
-				Liked     bool `json:"liked"`
-				Collected bool `json:"collected"`
-			} `json:"interactInfo"`
-		} `json:"note"`
+	// 解析结果
+	var interactInfo struct {
+		Liked     bool `json:"liked"`
+		Collected bool `json:"collected"`
 	}
-	if err := json.Unmarshal([]byte(result), &noteDetailMap); err != nil {
-		return false, false, errors.Wrap(err, "unmarshal noteDetailMap failed")
+	if err := json.Unmarshal([]byte(result), &interactInfo); err != nil {
+		return false, false, errors.Wrap(err, "unmarshal interactInfo failed")
 	}
 
-	detail, ok := noteDetailMap[feedID]
-	if !ok {
-		return false, false, fmt.Errorf("feed %s not in noteDetailMap", feedID)
-	}
-	return detail.Note.InteractInfo.Liked, detail.Note.InteractInfo.Collected, nil
+	return interactInfo.Liked, interactInfo.Collected, nil
 }
