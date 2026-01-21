@@ -704,3 +704,404 @@ func (s *AppServer) handleReplyComment(ctx context.Context, args map[string]inte
 		}},
 	}
 }
+
+// handleFollowUser 处理关注/取关用户
+func (s *AppServer) handleFollowUser(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	logrus.Info("MCP: 关注/取关用户")
+
+	// 解析参数
+	userID, ok := args["user_id"].(string)
+	if !ok || userID == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "操作失败: 缺少user_id参数",
+			}},
+			IsError: true,
+		}
+	}
+
+	xsecToken, ok := args["xsec_token"].(string)
+	if !ok || xsecToken == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "操作失败: 缺少xsec_token参数",
+			}},
+			IsError: true,
+		}
+	}
+
+	unfollow, _ := args["unfollow"].(bool)
+
+	var res *ActionResult
+	var err error
+
+	if unfollow {
+		res, err = s.xiaohongshuService.UnfollowUser(ctx, userID, xsecToken)
+	} else {
+		res, err = s.xiaohongshuService.FollowUser(ctx, userID, xsecToken)
+	}
+
+	if err != nil {
+		action := "关注"
+		if unfollow {
+			action = "取关"
+		}
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: action + "失败: " + err.Error(),
+			}},
+			IsError: true,
+		}
+	}
+
+	action := "关注"
+	if unfollow {
+		action = "取关"
+	}
+	return &MCPToolResult{
+		Content: []MCPContent{{
+			Type: "text",
+			Text: fmt.Sprintf("%s成功 - User ID: %s", action, res.FeedID),
+		}},
+	}
+}
+
+// handleLikeComment 处理评论点赞/取消点赞
+func (s *AppServer) handleLikeComment(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	logrus.Info("MCP: 评论点赞/取消点赞")
+
+	// 解析参数
+	feedID, ok := args["feed_id"].(string)
+	if !ok || feedID == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "操作失败: 缺少feed_id参数",
+			}},
+			IsError: true,
+		}
+	}
+
+	xsecToken, ok := args["xsec_token"].(string)
+	if !ok || xsecToken == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "操作失败: 缺少xsec_token参数",
+			}},
+			IsError: true,
+		}
+	}
+
+	commentID, _ := args["comment_id"].(string)
+	userID, _ := args["user_id"].(string)
+	if commentID == "" && userID == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "操作失败: 缺少comment_id或user_id参数",
+			}},
+			IsError: true,
+		}
+	}
+
+	unlike, _ := args["unlike"].(bool)
+
+	var res *ActionResult
+	var err error
+
+	if unlike {
+		res, err = s.xiaohongshuService.UnlikeComment(ctx, feedID, xsecToken, commentID, userID)
+	} else {
+		res, err = s.xiaohongshuService.LikeComment(ctx, feedID, xsecToken, commentID, userID)
+	}
+
+	if err != nil {
+		action := "点赞评论"
+		if unlike {
+			action = "取消点赞评论"
+		}
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: action + "失败: " + err.Error(),
+			}},
+			IsError: true,
+		}
+	}
+
+	action := "点赞评论"
+	if unlike {
+		action = "取消点赞评论"
+	}
+	return &MCPToolResult{
+		Content: []MCPContent{{
+			Type: "text",
+			Text: fmt.Sprintf("%s成功 - Feed ID: %s", action, res.FeedID),
+		}},
+	}
+}
+
+// handleShareFeed 处理分享笔记
+func (s *AppServer) handleShareFeed(ctx context.Context, feedID, xsecToken string) *MCPToolResult {
+	logrus.Info("MCP: 分享笔记")
+
+	if feedID == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "操作失败: 缺少feed_id参数",
+			}},
+			IsError: true,
+		}
+	}
+
+	if xsecToken == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "操作失败: 缺少xsec_token参数",
+			}},
+			IsError: true,
+		}
+	}
+
+	shareLink, err := s.xiaohongshuService.ShareFeed(ctx, feedID, xsecToken)
+	if err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "分享失败: " + err.Error(),
+			}},
+			IsError: true,
+		}
+	}
+
+	return &MCPToolResult{
+		Content: []MCPContent{{
+			Type: "text",
+			Text: fmt.Sprintf("分享成功 - 分享链接: %s", shareLink),
+		}},
+	}
+}
+
+// handleDeleteFeed 处理删除笔记
+func (s *AppServer) handleDeleteFeed(ctx context.Context, feedID, xsecToken string) *MCPToolResult {
+	logrus.Info("MCP: 删除笔记")
+
+	if feedID == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "操作失败: 缺少feed_id参数",
+			}},
+			IsError: true,
+		}
+	}
+
+	if xsecToken == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "操作失败: 缺少xsec_token参数",
+			}},
+			IsError: true,
+		}
+	}
+
+	res, err := s.xiaohongshuService.DeleteFeed(ctx, feedID, xsecToken)
+	if err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "删除失败: " + err.Error(),
+			}},
+			IsError: true,
+		}
+	}
+
+	return &MCPToolResult{
+		Content: []MCPContent{{
+			Type: "text",
+			Text: fmt.Sprintf("删除成功 - Feed ID: %s", res.FeedID),
+		}},
+	}
+}
+
+// handleDeleteComment 处理删除评论
+func (s *AppServer) handleDeleteComment(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	logrus.Info("MCP: 删除评论")
+
+	feedID, ok := args["feed_id"].(string)
+	if !ok || feedID == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "操作失败: 缺少feed_id参数",
+			}},
+			IsError: true,
+		}
+	}
+
+	xsecToken, ok := args["xsec_token"].(string)
+	if !ok || xsecToken == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "操作失败: 缺少xsec_token参数",
+			}},
+			IsError: true,
+		}
+	}
+
+	commentID, _ := args["comment_id"].(string)
+	userID, _ := args["user_id"].(string)
+	if commentID == "" && userID == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "操作失败: 缺少comment_id或user_id参数",
+			}},
+			IsError: true,
+		}
+	}
+
+	res, err := s.xiaohongshuService.DeleteComment(ctx, feedID, xsecToken, commentID, userID)
+	if err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "删除评论失败: " + err.Error(),
+			}},
+			IsError: true,
+		}
+	}
+
+	return &MCPToolResult{
+		Content: []MCPContent{{
+			Type: "text",
+			Text: fmt.Sprintf("删除评论成功 - Feed ID: %s", res.FeedID),
+		}},
+	}
+}
+
+// handleGetMyStats 处理获取个人统计数据
+func (s *AppServer) handleGetMyStats(ctx context.Context) *MCPToolResult {
+	logrus.Info("MCP: 获取个人统计数据")
+
+	stats, err := s.xiaohongshuService.GetMyStats(ctx)
+	if err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "获取统计数据失败: " + err.Error(),
+			}},
+			IsError: true,
+		}
+	}
+
+	// 格式化输出
+	jsonData, err := json.MarshalIndent(stats, "", "  ")
+	if err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: fmt.Sprintf("获取统计数据成功，但序列化失败: %v", err),
+			}},
+			IsError: true,
+		}
+	}
+
+	return &MCPToolResult{
+		Content: []MCPContent{{
+			Type: "text",
+			Text: string(jsonData),
+		}},
+	}
+}
+
+// handleGetMyFeeds 处理获取自己的笔记列表
+func (s *AppServer) handleGetMyFeeds(ctx context.Context, limit int) *MCPToolResult {
+	logrus.Infof("MCP: 获取自己的笔记列表，限制: %d", limit)
+
+	feeds, err := s.xiaohongshuService.GetMyFeeds(ctx, limit)
+	if err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "获取笔记列表失败: " + err.Error(),
+			}},
+			IsError: true,
+		}
+	}
+
+	// 格式化输出
+	jsonData, err := json.MarshalIndent(feeds, "", "  ")
+	if err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: fmt.Sprintf("获取笔记列表成功，但序列化失败: %v", err),
+			}},
+			IsError: true,
+		}
+	}
+
+	return &MCPToolResult{
+		Content: []MCPContent{{
+			Type: "text",
+			Text: string(jsonData),
+		}},
+	}
+}
+
+// handleGetFanAnalytics 处理获取粉丝分析请求
+func (s *AppServer) handleGetFanAnalytics(ctx context.Context, period string) *MCPToolResult {
+	analytics, err := s.xiaohongshuService.GetFanAnalytics(ctx, period)
+	if err != nil {
+		return &MCPToolResult{
+			IsError: true,
+			Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("获取粉丝分析数据失败: %v", err)}},
+		}
+	}
+
+	data, err := json.Marshal(analytics)
+	if err != nil {
+		return &MCPToolResult{
+			IsError: true,
+			Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("序列化数据失败: %v", err)}},
+		}
+	}
+
+	return &MCPToolResult{
+		IsError: false,
+		Content: []MCPContent{{Type: "text", Text: string(data)}},
+	}
+}
+
+// handleGetContentAnalytics 处理获取内容分析请求
+func (s *AppServer) handleGetContentAnalytics(ctx context.Context, limit int) *MCPToolResult {
+	analytics, err := s.xiaohongshuService.GetContentAnalytics(ctx, limit)
+	if err != nil {
+		return &MCPToolResult{
+			IsError: true,
+			Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("获取内容分析数据失败: %v", err)}},
+		}
+	}
+
+	data, err := json.Marshal(analytics)
+	if err != nil {
+		return &MCPToolResult{
+			IsError: true,
+			Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("序列化数据失败: %v", err)}},
+		}
+	}
+
+	return &MCPToolResult{
+		IsError: false,
+		Content: []MCPContent{{Type: "text", Text: string(data)}},
+	}
+}

@@ -223,23 +223,6 @@ func (d *DataAction) GetMyStats(ctx context.Context) (*UserStats, error) {
 	return &stats, nil
 }
 
-// GetFollowersList 获取粉丝列表
-// 注意: 小红书网页版不支持粉丝列表页面，请使用创作者中心的粉丝数据功能
-func (d *DataAction) GetFollowersList(ctx context.Context, limit int) ([]FollowerUser, error) {
-	// 网页版不支持粉丝列表页面 (返回404)
-	// 替代方案: 使用 GetFanAnalytics 获取粉丝相关数据
-	logrus.Warn("小红书网页版不支持粉丝列表页面，请使用 get_fan_analytics 获取粉丝数据")
-	return nil, fmt.Errorf("小红书网页版不支持粉丝列表页面，URL /user/profile/me/followers 返回404。请使用 get_fan_analytics 工具获取粉丝相关数据")
-}
-
-// GetFollowingList 获取关注列表
-// 注意: 小红书网页版不支持关注列表页面，请使用创作者中心的粉丝数据功能
-func (d *DataAction) GetFollowingList(ctx context.Context, limit int) ([]FollowerUser, error) {
-	// 网页版不支持关注列表页面 (返回404)
-	logrus.Warn("小红书网页版不支持关注列表页面")
-	return nil, fmt.Errorf("小红书网页版不支持关注列表页面，URL /user/profile/me/follows 返回404。此功能仅在移动端可用")
-}
-
 // GetMyFeeds 获取自己发布的笔记列表
 func (d *DataAction) GetMyFeeds(ctx context.Context, limit int) ([]Feed, error) {
 	page := d.page.Context(ctx).Timeout(5 * time.Minute)

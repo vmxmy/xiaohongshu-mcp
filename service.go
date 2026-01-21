@@ -590,3 +590,213 @@ func (s *XiaohongshuService) GetMyProfile(ctx context.Context) (*UserProfileResp
 
 	return response, nil
 }
+
+// FollowUser 关注用户
+func (s *XiaohongshuService) FollowUser(ctx context.Context, userID, xsecToken string) (*ActionResult, error) {
+	var err error
+
+	err = withBrowserPage(func(page *rod.Page) error {
+		action := xiaohongshu.NewFollowAction(page)
+		return action.Follow(ctx, userID, xsecToken)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &ActionResult{
+		FeedID:  userID,
+		Success: true,
+		Message: "关注成功",
+	}, nil
+}
+
+// UnfollowUser 取关用户
+func (s *XiaohongshuService) UnfollowUser(ctx context.Context, userID, xsecToken string) (*ActionResult, error) {
+	var err error
+
+	err = withBrowserPage(func(page *rod.Page) error {
+		action := xiaohongshu.NewFollowAction(page)
+		return action.Unfollow(ctx, userID, xsecToken)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &ActionResult{
+		FeedID:  userID,
+		Success: true,
+		Message: "取关成功",
+	}, nil
+}
+
+// LikeComment 点赞评论
+func (s *XiaohongshuService) LikeComment(ctx context.Context, feedID, xsecToken, commentID, userID string) (*ActionResult, error) {
+	var err error
+
+	err = withBrowserPage(func(page *rod.Page) error {
+		action := xiaohongshu.NewCommentLikeAction(page)
+		return action.LikeComment(ctx, feedID, xsecToken, commentID, userID)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &ActionResult{
+		FeedID:  feedID,
+		Success: true,
+		Message: "评论点赞成功",
+	}, nil
+}
+
+// UnlikeComment 取消点赞评论
+func (s *XiaohongshuService) UnlikeComment(ctx context.Context, feedID, xsecToken, commentID, userID string) (*ActionResult, error) {
+	var err error
+
+	err = withBrowserPage(func(page *rod.Page) error {
+		action := xiaohongshu.NewCommentLikeAction(page)
+		return action.UnlikeComment(ctx, feedID, xsecToken, commentID, userID)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &ActionResult{
+		FeedID:  feedID,
+		Success: true,
+		Message: "取消评论点赞成功",
+	}, nil
+}
+
+// ShareFeed 分享笔记，获取分享链接
+func (s *XiaohongshuService) ShareFeed(ctx context.Context, feedID, xsecToken string) (string, error) {
+	var shareLink string
+	var err error
+
+	err = withBrowserPage(func(page *rod.Page) error {
+		action := xiaohongshu.NewShareAction(page)
+		shareLink, err = action.ShareFeed(ctx, feedID, xsecToken)
+		return err
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	return shareLink, nil
+}
+
+// DeleteFeed 删除自己的笔记
+func (s *XiaohongshuService) DeleteFeed(ctx context.Context, feedID, xsecToken string) (*ActionResult, error) {
+	var err error
+
+	err = withBrowserPage(func(page *rod.Page) error {
+		action := xiaohongshu.NewDeleteAction(page)
+		return action.DeleteFeed(ctx, feedID, xsecToken)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &ActionResult{
+		FeedID:  feedID,
+		Success: true,
+		Message: "笔记删除成功",
+	}, nil
+}
+
+// DeleteComment 删除自己的评论
+func (s *XiaohongshuService) DeleteComment(ctx context.Context, feedID, xsecToken, commentID, userID string) (*ActionResult, error) {
+	var err error
+
+	err = withBrowserPage(func(page *rod.Page) error {
+		action := xiaohongshu.NewDeleteAction(page)
+		return action.DeleteComment(ctx, feedID, xsecToken, commentID, userID)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &ActionResult{
+		FeedID:  feedID,
+		Success: true,
+		Message: "评论删除成功",
+	}, nil
+}
+
+// GetMyStats 获取当前用户的统计数据
+func (s *XiaohongshuService) GetMyStats(ctx context.Context) (*xiaohongshu.UserStats, error) {
+	var stats *xiaohongshu.UserStats
+	var err error
+
+	err = withBrowserPage(func(page *rod.Page) error {
+		action := xiaohongshu.NewDataAction(page)
+		stats, err = action.GetMyStats(ctx)
+		return err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return stats, nil
+}
+
+// GetMyFeeds 获取自己发布的笔记列表
+func (s *XiaohongshuService) GetMyFeeds(ctx context.Context, limit int) ([]xiaohongshu.Feed, error) {
+	var feeds []xiaohongshu.Feed
+	var err error
+
+	err = withBrowserPage(func(page *rod.Page) error {
+		action := xiaohongshu.NewDataAction(page)
+		feeds, err = action.GetMyFeeds(ctx, limit)
+		return err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return feeds, nil
+}
+
+// GetFanAnalytics 获取粉丝分析数据
+func (s *XiaohongshuService) GetFanAnalytics(ctx context.Context, period string) (*xiaohongshu.FanAnalytics, error) {
+	var analytics *xiaohongshu.FanAnalytics
+	var err error
+
+	err = withBrowserPage(func(page *rod.Page) error {
+		action := xiaohongshu.NewDataAction(page)
+		analytics, err = action.GetFanAnalytics(ctx, period)
+		return err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return analytics, nil
+}
+
+// GetContentAnalytics 获取内容分析数据
+func (s *XiaohongshuService) GetContentAnalytics(ctx context.Context, limit int) (*xiaohongshu.ContentAnalytics, error) {
+	var analytics *xiaohongshu.ContentAnalytics
+	var err error
+
+	err = withBrowserPage(func(page *rod.Page) error {
+		action := xiaohongshu.NewDataAction(page)
+		analytics, err = action.GetContentAnalytics(ctx, limit)
+		return err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return analytics, nil
+}
