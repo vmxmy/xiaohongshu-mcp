@@ -854,3 +854,126 @@ Cline 是一个强大的 AI 编程助手，支持 MCP 协议集成。
 | [<img src="https://avatars.githubusercontent.com/wanpengxie" width="100px;"><br>@wanpengxie](https://github.com/wanpengxie) |
 
 本项目遵循 [all-contributors](https://github.com/all-contributors/all-contributors) 规范。欢迎任何形式的贡献！
+
+---
+
+## 🚀 编译和使用指南
+
+### 项目结构
+
+本项目包含**两个独立的程序**：
+
+1. **登录工具** (`bin/xiaohongshu-login`) - 带界面的登录程序
+2. **MCP服务** (`bin/xiaohongshu-mcp`) - 无头模式的MCP工具服务器
+
+### 快速开始
+
+#### 1. 编译程序
+
+```bash
+# 使用构建脚本一键编译
+./build.sh
+
+# 编译完成后，可执行文件在 bin/ 目录下
+ls -lh bin/
+```
+
+#### 2. 首次登录
+
+```bash
+# 运行登录工具（会打开浏览器窗口）
+./bin/xiaohongshu-login
+```
+
+使用小红书App扫码登录，登录成功后cookies会自动保存。
+
+#### 3. 启动MCP服务
+
+```bash
+# 启动MCP服务（无界面，后台运行）
+./bin/xiaohongshu-mcp
+```
+
+#### 4. 配置MCP客户端
+
+在你的MCP客户端配置文件中添加：
+
+```json
+{
+  "mcpServers": {
+    "xiaohongshu": {
+      "command": "/path/to/xiaohongshu-mcp/bin/xiaohongshu-mcp"
+    }
+  }
+}
+```
+
+### 可用的MCP工具（20个）
+
+#### 基础功能
+- `check_login_status` - 检查登录状态
+- `get_login_qrcode` - 获取登录二维码
+- `delete_cookies` - 删除cookies重置登录
+- `publish_content` - 发布图文内容
+- `publish_with_video` - 发布视频内容
+
+#### 内容浏览
+- `list_feeds` - 获取首页Feeds列表
+- `search_feeds` - 搜索内容
+- `get_feed_detail` - 获取笔记详情
+- `user_profile` - 获取用户主页
+
+#### 互动功能
+- `post_comment_to_feed` - 发表评论
+- `reply_comment_in_feed` - 回复评论
+- `like_feed` - 点赞/取消点赞笔记
+- `favorite_feed` - 收藏/取消收藏笔记
+- `follow_user` - 关注/取关用户
+- `like_comment` - 点赞/取消点赞评论
+
+#### 内容管理
+- `share_feed` - 分享笔记获取链接
+- `delete_feed` - 删除自己的笔记
+- `delete_comment` - 删除自己的评论
+
+#### 数据获取
+- `get_my_stats` - 获取个人统计数据
+- `get_my_feeds` - 获取自己的笔记列表
+- `get_fan_analytics` - 获取粉丝分析数据
+- `get_content_analytics` - 获取内容分析数据
+
+### ⚠️ 操作频率建议
+
+为避免账号被封，建议遵循以下频率：
+- **点赞**: 每小时≤60次，间隔≥30秒
+- **评论**: 每小时≤20次，间隔≥2分钟
+- **关注**: 每小时≤30次，间隔≥1分钟
+- **发布**: 每天≤5条，间隔≥2小时
+
+**建议**: 不要使用批量操作，让AI控制调用频率和间隔时间。
+
+### 常见问题
+
+**Q: 登录状态保存在哪里？**
+A: 保存在 `~/.xiaohongshu/cookies.json`
+
+**Q: 如何重新登录？**
+A: 删除cookies后重新运行登录工具：
+```bash
+rm ~/.xiaohongshu/cookies.json
+./bin/xiaohongshu-login
+```
+
+**Q: 为什么要分成两个程序？**
+A: 登录工具需要显示浏览器界面供用户扫码，MCP服务在后台无头运行，性能更好。
+
+### 更新日志
+
+#### 2026-01-21
+- **修复**: 重写数据提取工具，使用JavaScript页面解析替代不可靠的DOM选择器
+- **优化**: 移除仅移动端可用的 `get_followers_list` 和 `get_following_list` 工具（网页版不支持）
+- **新增**: `get_fan_analytics` 粉丝分析数据工具
+- **新增**: `get_content_analytics` 内容分析数据工具
+- **新增**: 页面结构分析文档 `docs/PAGE_STRUCTURE_ANALYSIS.md`
+
+---

@@ -95,6 +95,60 @@ type FavoriteFeedArgs struct {
 	Unfavorite bool   `json:"unfavorite,omitempty" jsonschema:"是否取消收藏，true为取消收藏，false或未设置则为收藏"`
 }
 
+// FollowUserArgs 关注用户参数
+type FollowUserArgs struct {
+	UserID    string `json:"user_id" jsonschema:"小红书用户ID，从Feed列表或用户主页获取"`
+	XsecToken string `json:"xsec_token" jsonschema:"访问令牌，从Feed列表的xsecToken字段获取"`
+	Unfollow  bool   `json:"unfollow,omitempty" jsonschema:"是否取关，true为取关，false或未设置则为关注"`
+}
+
+// LikeCommentArgs 评论点赞参数
+type LikeCommentArgs struct {
+	FeedID    string `json:"feed_id" jsonschema:"小红书笔记ID，从Feed列表获取"`
+	XsecToken string `json:"xsec_token" jsonschema:"访问令牌，从Feed列表的xsecToken字段获取"`
+	CommentID string `json:"comment_id,omitempty" jsonschema:"目标评论ID，从评论列表获取"`
+	UserID    string `json:"user_id,omitempty" jsonschema:"目标评论用户ID，从评论列表获取"`
+	Unlike    bool   `json:"unlike,omitempty" jsonschema:"是否取消点赞，true为取消点赞，false或未设置则为点赞"`
+}
+
+// ShareFeedArgs 分享笔记参数
+type ShareFeedArgs struct {
+	FeedID    string `json:"feed_id" jsonschema:"小红书笔记ID，从Feed列表获取"`
+	XsecToken string `json:"xsec_token" jsonschema:"访问令牌，从Feed列表的xsecToken字段获取"`
+}
+
+// DeleteFeedArgs 删除笔记参数
+type DeleteFeedArgs struct {
+	FeedID    string `json:"feed_id" jsonschema:"小红书笔记ID，从Feed列表获取"`
+	XsecToken string `json:"xsec_token" jsonschema:"访问令牌，从Feed列表的xsecToken字段获取"`
+}
+
+// DeleteCommentArgs 删除评论参数
+type DeleteCommentArgs struct {
+	FeedID    string `json:"feed_id" jsonschema:"小红书笔记ID，从Feed列表获取"`
+	XsecToken string `json:"xsec_token" jsonschema:"访问令牌，从Feed列表的xsecToken字段获取"`
+	CommentID string `json:"comment_id,omitempty" jsonschema:"目标评论ID，从评论列表获取"`
+	UserID    string `json:"user_id,omitempty" jsonschema:"目标评论用户ID，从评论列表获取"`
+}
+
+// GetMyFeedsArgs 获取自己笔记列表参数
+type GetMyFeedsArgs struct {
+	Placeholder bool `json:"_,omitempty"`
+	Limit       int  `json:"limit,omitempty" jsonschema:"限制返回数量，默认20，最大100"`
+}
+
+// GetFanAnalyticsArgs 获取粉丝分析参数
+type GetFanAnalyticsArgs struct {
+	Placeholder bool   `json:"_,omitempty"`
+	Period      string `json:"period,omitempty" jsonschema:"统计周期，7d或30d，默认7d"`
+}
+
+// GetContentAnalyticsArgs 获取内容分析参数
+type GetContentAnalyticsArgs struct {
+	Placeholder bool `json:"_,omitempty"`
+	Limit       int  `json:"limit,omitempty" jsonschema:"限制返回笔记数量，默认20，最大100"`
+}
+
 // InitMCPServer 初始化 MCP Server
 func InitMCPServer(appServer *AppServer) *mcp.Server {
 	// 创建 MCP Server
@@ -433,7 +487,179 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 		}),
 	)
 
-	logrus.Infof("Registered %d MCP tools", 13)
+	// 工具 14: 关注/取关用户
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "follow_user",
+			Description: "关注指定用户或取关（如已关注将跳过关注，如未关注将跳过取关）",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "Follow User",
+				DestructiveHint: boolPtr(true),
+			},
+		},
+		withPanicRecovery("follow_user", func(ctx context.Context, req *mcp.CallToolRequest, args FollowUserArgs) (*mcp.CallToolResult, any, error) {
+			argsMap := map[string]interface{}{
+				"user_id":    args.UserID,
+				"xsec_token": args.XsecToken,
+				"unfollow":   args.Unfollow,
+			}
+			result := appServer.handleFollowUser(ctx, argsMap)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	// 工具 15: 评论点赞
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "like_comment",
+			Description: "点赞指定评论或取消点赞（如已点赞将跳过点赞，如未点赞将跳过取消点赞）",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "Like Comment",
+				DestructiveHint: boolPtr(true),
+			},
+		},
+		withPanicRecovery("like_comment", func(ctx context.Context, req *mcp.CallToolRequest, args LikeCommentArgs) (*mcp.CallToolResult, any, error) {
+			argsMap := map[string]interface{}{
+				"feed_id":    args.FeedID,
+				"xsec_token": args.XsecToken,
+				"comment_id": args.CommentID,
+				"user_id":    args.UserID,
+				"unlike":     args.Unlike,
+			}
+			result := appServer.handleLikeComment(ctx, argsMap)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	// 工具 16: 分享笔记
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "share_feed",
+			Description: "分享指定笔记，获取分享链接",
+			Annotations: &mcp.ToolAnnotations{
+				Title: "Share Feed",
+			},
+		},
+		withPanicRecovery("share_feed", func(ctx context.Context, req *mcp.CallToolRequest, args ShareFeedArgs) (*mcp.CallToolResult, any, error) {
+			result := appServer.handleShareFeed(ctx, args.FeedID, args.XsecToken)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	// 工具 17: 删除笔记
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "delete_feed",
+			Description: "删除自己的笔记",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "Delete Feed",
+				DestructiveHint: boolPtr(true),
+			},
+		},
+		withPanicRecovery("delete_feed", func(ctx context.Context, req *mcp.CallToolRequest, args DeleteFeedArgs) (*mcp.CallToolResult, any, error) {
+			result := appServer.handleDeleteFeed(ctx, args.FeedID, args.XsecToken)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	// 工具 18: 删除评论
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "delete_comment",
+			Description: "删除自己的评论",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "Delete Comment",
+				DestructiveHint: boolPtr(true),
+			},
+		},
+		withPanicRecovery("delete_comment", func(ctx context.Context, req *mcp.CallToolRequest, args DeleteCommentArgs) (*mcp.CallToolResult, any, error) {
+			argsMap := map[string]interface{}{
+				"feed_id":    args.FeedID,
+				"xsec_token": args.XsecToken,
+				"comment_id": args.CommentID,
+				"user_id":    args.UserID,
+			}
+			result := appServer.handleDeleteComment(ctx, argsMap)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	// 工具 19: 获取个人统计数据
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "get_my_stats",
+			Description: "获取当前用户的统计数据（粉丝数、关注数、获赞数、笔记数等）",
+			Annotations: &mcp.ToolAnnotations{
+				Title: "Get My Stats",
+			},
+		},
+		withPanicRecovery("get_my_stats", func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+			result := appServer.handleGetMyStats(ctx)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	// 工具 20: 获取自己的笔记列表
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "get_my_feeds",
+			Description: "获取自己发布的笔记列表",
+			Annotations: &mcp.ToolAnnotations{
+				Title: "Get My Feeds",
+			},
+		},
+		withPanicRecovery("get_my_feeds", func(ctx context.Context, req *mcp.CallToolRequest, args GetMyFeedsArgs) (*mcp.CallToolResult, any, error) {
+			if args.Limit == 0 {
+				args.Limit = 20
+			}
+			if args.Limit > 100 {
+				args.Limit = 100
+			}
+			result := appServer.handleGetMyFeeds(ctx, args.Limit)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	// 工具 23: 获取粉丝分析数据
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "get_fan_analytics",
+			Description: "获取粉丝分析数据，包括粉丝概览、粉丝画像（性别、兴趣分布）和活跃粉丝列表",
+			Annotations: &mcp.ToolAnnotations{
+				Title: "Get Fan Analytics",
+			},
+		},
+		withPanicRecovery("get_fan_analytics", func(ctx context.Context, req *mcp.CallToolRequest, args GetFanAnalyticsArgs) (*mcp.CallToolResult, any, error) {
+			if args.Period == "" {
+				args.Period = "7d"
+			}
+			result := appServer.handleGetFanAnalytics(ctx, args.Period)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	// 工具 24: 获取内容分析数据
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "get_content_analytics",
+			Description: "获取内容分析数据，包括每篇笔记的详细指标（曝光、观看、点赞、评论、收藏、涨粉等）",
+			Annotations: &mcp.ToolAnnotations{
+				Title: "Get Content Analytics",
+			},
+		},
+		withPanicRecovery("get_content_analytics", func(ctx context.Context, req *mcp.CallToolRequest, args GetContentAnalyticsArgs) (*mcp.CallToolResult, any, error) {
+			if args.Limit == 0 {
+				args.Limit = 20
+			}
+			if args.Limit > 100 {
+				args.Limit = 100
+			}
+			result := appServer.handleGetContentAnalytics(ctx, args.Limit)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	logrus.Infof("Registered %d MCP tools", 24)
 }
 
 // convertToMCPResult 将自定义的 MCPToolResult 转换为官方 SDK 的格式

@@ -1,0 +1,196 @@
+version: "1.0"
+last_updated: "2026-01-21T04:00:00+08:00"
+description: "小红书页面元素选择器配置"
+
+# 点赞按钮
+like_button:
+  name: "点赞按钮"
+  primary:
+    - selector: ".like-wrapper .like-lottie"
+      version: "2024-12"
+      confidence: 0.95
+      description: "当前版本选择器"
+
+  fallback:
+    - selector: ".interact-container .left .like-lottie"
+      version: "2024-06"
+      confidence: 0.80
+      description: "旧版本选择器"
+
+    - selector: "[class*='like'][class*='wrapper']"
+      version: "universal"
+      confidence: 0.60
+      description: "模糊匹配"
+
+    - selector: "[aria-label*='点赞']"
+      version: "semantic"
+      confidence: 0.70
+      description: "语义化属性"
+
+  validation:
+    must_be_visible: true
+    must_be_clickable: true
+    parent_contains: ["interact", "like"]
+
+# 收藏按钮
+collect_button:
+  name: "收藏按钮"
+  primary:
+    - selector: ".collect-wrapper .collect-icon"
+      version: "2024-12"
+      confidence: 0.95
+      description: "当前版本选择器"
+
+  fallback:
+    - selector: ".interact-container .left .reds-icon.collect-icon"
+      version: "2024-06"
+      confidence: 0.80
+      description: "旧版本选择器"
+
+    - selector: "[class*='collect']"
+      version: "universal"
+      confidence: 0.60
+      description: "模糊匹配"
+
+  validation:
+    must_be_visible: true
+    must_be_clickable: true
+
+# 评论输入框
+comment_input:
+  name: "评论输入框"
+  primary:
+    - selector: "#content-textarea"
+      version: "2024-12"
+      confidence: 0.95
+      description: "ID选择器"
+
+    - selector: "p.content-input[contenteditable='true']"
+      version: "2024-12"
+      confidence: 0.90
+      description: "标签+class+属性"
+
+  fallback:
+    - selector: "[contenteditable='true']#content-textarea"
+      version: "2024-12"
+      confidence: 0.85
+      description: "组合选择器"
+
+    - selector: "p[contenteditable='true']"
+      version: "universal"
+      confidence: 0.70
+      description: "通用contenteditable"
+
+    - selector: "textarea"
+      version: "legacy"
+      confidence: 0.50
+      description: "传统textarea"
+
+    - selector: "div.input-box div.content-edit span"
+      version: "2024-06"
+      confidence: 0.40
+      description: "旧版选择器"
+
+  validation:
+    must_be_visible: true
+    must_be_editable: true
+    attributes:
+      contenteditable: "true"
+
+# 提交按钮
+submit_button:
+  name: "提交按钮"
+  primary:
+    - selector: "button.submit"
+      version: "2024-12"
+      confidence: 0.90
+      description: "class选择器"
+
+    - selector: "div.bottom button.submit"
+      version: "2024-06"
+      confidence: 0.85
+      description: "旧版选择器"
+
+  fallback:
+    - selector: "button[class*='submit']"
+      version: "universal"
+      confidence: 0.75
+      description: "包含submit的按钮"
+
+    - selector: "div.bottom button"
+      version: "universal"
+      confidence: 0.70
+      description: "bottom区域的按钮"
+
+    - selector: "button[type='submit']"
+      version: "universal"
+      confidence: 0.65
+      description: "submit类型按钮"
+
+  text_match:
+    - "发布"
+    - "提交"
+    - "评论"
+
+  validation:
+    must_be_visible: true
+    must_be_clickable: true
+    text_contains: ["发布", "提交"]
+
+# 回复按钮
+reply_button:
+  name: "回复按钮"
+  primary:
+    - selector: ".right .interactions .reply"
+      version: "2024-12"
+      confidence: 0.90
+      description: "当前版本"
+
+  fallback:
+    - selector: "[class*='reply']"
+      version: "universal"
+      confidence: 0.70
+      description: "包含reply的元素"
+
+  text_match:
+    - "回复"
+
+  validation:
+    must_be_visible: true
+    must_be_clickable: true
+
+# 关注按钮
+follow_button:
+  name: "关注按钮"
+  primary:
+    - selector: "button.follow-button"
+      version: "2024-12"
+      confidence: 0.90
+      description: "class选择器"
+
+    - selector: "button[class*='follow']"
+      version: "2024-12"
+      confidence: 0.85
+      description: "包含follow的按钮"
+
+  fallback:
+    - selector: ".user-info button"
+      version: "universal"
+      confidence: 0.75
+      description: "用户信息区域的按钮"
+
+    - selector: ".user-card button"
+      version: "universal"
+      confidence: 0.70
+      description: "用户卡片区域的按钮"
+
+  text_match:
+    - "关注"
+    - "已关注"
+    - "+ 关注"
+
+  validation:
+    must_be_visible: true
+    must_be_clickable: true
+    text_contains: ["关注"]
+
