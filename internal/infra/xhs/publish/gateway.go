@@ -32,7 +32,30 @@ func NewGateway(cfg Config, engine browser.Engine) (*Gateway, error) {
 }
 
 func (g *Gateway) PublishImage(ctx context.Context, content publish.ImageContent) error {
-	return ErrNotReady
+	if err := g.engine.Start(); err != nil {
+		return err
+	}
+	defer g.engine.Close()
+
+	page, err := g.engine.NewPage()
+	if err != nil {
+		return err
+	}
+	defer page.Close()
+
+	if err := page.Goto(g.cfg.PublishImageURL); err != nil {
+		return err
+	}
+	if err := page.SetFiles(g.cfg.Selectors["upload_input"], content.ImagePaths); err != nil {
+		return err
+	}
+	if err := page.Fill(g.cfg.Selectors["title_input"], content.Title); err != nil {
+		return err
+	}
+	if err := page.Fill(g.cfg.Selectors["content"], content.Content); err != nil {
+		return err
+	}
+	return page.Click(g.cfg.Selectors["submit"])
 }
 
 func (g *Gateway) PublishVideo(ctx context.Context, content publish.VideoContent) error {
