@@ -48,7 +48,8 @@ func (m *LoginManager) GetQRCode(ctx context.Context) (loginQRResult, error) {
 		m.now = time.Now
 	}
 
-	if m.session == nil {
+	if m.session == nil || m.expiredLocked() {
+		_ = m.closeLocked()
 		s, err := m.newSession()
 		if err != nil {
 			return loginQRResult{}, err
@@ -58,20 +59,61 @@ func (m *LoginManager) GetQRCode(ctx context.Context) (loginQRResult, error) {
 	}
 
 	if err := m.session.Open(ctx); err != nil {
+		_ = m.closeLocked()
 		return loginQRResult{}, err
+	}
+
+	loggedIn, err := m.session.LoggedIn(ctx)
+	if err != nil {
+		_ = m.closeLocked()
+		return loginQRResult{}, err
+	}
+	if loggedIn {
+		if err := m.session.SaveCookies(); err != nil {
+			_ = m.closeLocked()
+			return loginQRResult{}, err
+		}
+		_ = m.closeLocked()
+		return loginQRResult{
+			LoginQrcodeResponse: LoginQrcodeResponse{
+				Timeout:    "0s",
+				IsLoggedIn: true,
+			},
+		}, nil
 	}
 
 	qr, err := m.session.QRCode(ctx)
 	if err != nil {
+		_ = m.closeLocked()
 		return loginQRResult{}, err
 	}
 
+	remaining := m.ttl - m.now().Sub(m.openedAt)
+	if remaining < 0 {
+		remaining = 0
+	}
 	return loginQRResult{
 		LoginQrcodeResponse: LoginQrcodeResponse{
-			Timeout:    m.ttl.String(),
+			Timeout:    remaining.String(),
 			IsLoggedIn: false,
 			Img:        qr.Image,
 		},
 		Stage: qr.Stage,
 	}, nil
+}
+
+func (m *LoginManager) expiredLocked() bool {
+	if m.ttl <= 0 {
+		return false
+	}
+	return m.now().Sub(m.openedAt) > m.ttl
+}
+
+func (m *LoginManager) closeLocked() error {
+	if m.session == nil {
+		return nil
+	}
+	err := m.session.Close()
+	m.session = nil
+	return err
 }
