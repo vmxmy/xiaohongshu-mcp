@@ -47,6 +47,9 @@ cookies.json
 # Playwright data
 .playwright-mcp/
 
+# Git worktrees
+.worktrees/
+
 # Build output
 bin/
 
