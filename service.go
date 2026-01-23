@@ -65,6 +65,8 @@ type LoginQrcodeResponse struct {
 	IsLoggedIn bool   `json:"is_logged_in"`
 	Img        string `json:"img,omitempty"`
 	Stage      string `json:"stage,omitempty"`
+	Status     string `json:"status,omitempty"`
+	SessionID  string `json:"session_id,omitempty"`
 }
 
 // PublishResponse 发布响应
@@ -158,6 +160,8 @@ func (s *XiaohongshuService) GetLoginQrcode(ctx context.Context) (*LoginQrcodeRe
 		Img:        img,
 		IsLoggedIn: result.IsLoggedIn,
 		Stage:      result.Stage,
+		Status:     result.Status,
+		SessionID:  result.SessionID,
 	}, nil
 }
 

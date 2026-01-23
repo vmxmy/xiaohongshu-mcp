@@ -78,6 +78,14 @@ func (s *AppServer) handleGetLoginQrcode(ctx context.Context) *MCPToolResult {
 	if strings.EqualFold(result.Stage, "security") {
 		text = "请用小红书 App 在 " + deadline + " 前扫码完成安全认证 👇"
 	}
+	lines := []string{text}
+	if result.Status != "" {
+		lines = append(lines, "状态: "+result.Status)
+	}
+	if result.SessionID != "" {
+		lines = append(lines, "会话: "+result.SessionID)
+	}
+	text = strings.Join(lines, "\n")
 
 	// 已登录：文本 + 图片
 	contents := []MCPContent{

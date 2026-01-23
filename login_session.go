@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 type loginSession interface {
@@ -21,8 +24,13 @@ type loginQRCode struct {
 
 type loginQRResult struct {
 	LoginQrcodeResponse
-	Stage string
 }
+
+const (
+	loginStatusLoggedIn       = "logged_in"
+	loginStatusLoginRequired  = "login_required"
+	loginStatusSecurityNeeded = "security_required"
+)
 
 type LoginManager struct {
 	mu         sync.Mutex
@@ -31,6 +39,9 @@ type LoginManager struct {
 	ttl        time.Duration
 	now        func() time.Time
 	openedAt   time.Time
+	sessionID  string
+
+	newSessionID func() string
 }
 
 func NewLoginManager(newSession func() (loginSession, error), ttl time.Duration) *LoginManager {
@@ -47,8 +58,14 @@ func (m *LoginManager) GetQRCode(ctx context.Context) (loginQRResult, error) {
 	if m.now == nil {
 		m.now = time.Now
 	}
+	if m.newSessionID == nil {
+		m.newSessionID = func() string {
+			return strconv.FormatInt(m.now().UnixNano(), 10)
+		}
+	}
 
-	if m.session == nil || m.expiredLocked() {
+	expired := m.session != nil && m.expiredLocked()
+	if m.session == nil || expired {
 		_ = m.closeLocked()
 		s, err := m.newSession()
 		if err != nil {
@@ -56,6 +73,8 @@ func (m *LoginManager) GetQRCode(ctx context.Context) (loginQRResult, error) {
 		}
 		m.session = s
 		m.openedAt = m.now()
+		m.sessionID = m.newSessionID()
+		logrus.WithField("session_id", m.sessionID).Info("login session created")
 	}
 
 	if err := m.session.Open(ctx); err != nil {
@@ -73,11 +92,15 @@ func (m *LoginManager) GetQRCode(ctx context.Context) (loginQRResult, error) {
 			_ = m.closeLocked()
 			return loginQRResult{}, err
 		}
+		logrus.WithField("session_id", m.sessionID).Info("login status logged_in")
+		sessionID := m.sessionID
 		_ = m.closeLocked()
 		return loginQRResult{
 			LoginQrcodeResponse: LoginQrcodeResponse{
 				Timeout:    "0s",
 				IsLoggedIn: true,
+				Status:     loginStatusLoggedIn,
+				SessionID:  sessionID,
 			},
 		}, nil
 	}
@@ -92,13 +115,25 @@ func (m *LoginManager) GetQRCode(ctx context.Context) (loginQRResult, error) {
 	if remaining < 0 {
 		remaining = 0
 	}
+	status := loginStatusLoginRequired
+	if qr.Stage == "security" {
+		status = loginStatusSecurityNeeded
+	}
+	logrus.WithFields(logrus.Fields{
+		"session_id": m.sessionID,
+		"status":     status,
+		"stage":      qr.Stage,
+		"timeout":    remaining.String(),
+	}).Info("login qrcode status")
 	return loginQRResult{
 		LoginQrcodeResponse: LoginQrcodeResponse{
 			Timeout:    remaining.String(),
 			IsLoggedIn: false,
 			Img:        qr.Image,
+			Stage:      qr.Stage,
+			Status:     status,
+			SessionID:  m.sessionID,
 		},
-		Stage: qr.Stage,
 	}, nil
 }
 
@@ -115,5 +150,6 @@ func (m *LoginManager) closeLocked() error {
 	}
 	err := m.session.Close()
 	m.session = nil
+	m.sessionID = ""
 	return err
 }
