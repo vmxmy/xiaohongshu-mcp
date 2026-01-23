@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
+	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/headless_browser"
 )
 
@@ -180,6 +181,8 @@ func (s *rodLoginSession) QRCode(ctx context.Context) (loginQRCode, error) {
 		stage = "security"
 	}
 
+	logrus.WithField("stage", stage).Info("login qrcode stage detect")
+
 	el, err := s.findQRCodeElement(ctx, stage == "security")
 	if err != nil {
 		return loginQRCode{}, err
@@ -214,6 +217,10 @@ func (s *rodLoginSession) Close() error {
 
 func (s *rodLoginSession) hasSecurityHint(ctx context.Context) bool {
 	ok, err := s.page.HasR(ctx, "body", securityHintRegexp)
+	logrus.WithFields(logrus.Fields{
+		"match": ok,
+		"err":   err,
+	}).Info("login qrcode security hint on page")
 	if err == nil && ok {
 		return true
 	}
@@ -223,6 +230,7 @@ func (s *rodLoginSession) hasSecurityHint(ctx context.Context) bool {
 func (s *rodLoginSession) findQRCodeElement(ctx context.Context, preferFrames bool) (qrElement, error) {
 	if preferFrames {
 		if el, ok := s.findQRCodeElementInChildFrames(ctx, s.page); ok {
+			logrus.WithField("source", "frame").Info("login qrcode element found")
 			return el, nil
 		}
 	}
@@ -230,31 +238,48 @@ func (s *rodLoginSession) findQRCodeElement(ctx context.Context, preferFrames bo
 	for _, selector := range qrSelectors {
 		el, err := s.page.Element(ctx, selector)
 		if err == nil && el != nil {
+			logrus.WithFields(logrus.Fields{
+				"source":   "page",
+				"selector": selector,
+			}).Info("login qrcode element found")
 			return el, nil
 		}
 	}
 
 	el, err := s.page.ElementR(ctx, "div", qrFallbackRegex)
 	if err == nil && el != nil {
+		logrus.WithField("source", "page_fallback").Info("login qrcode element found")
 		return el, nil
 	}
 
 	if !preferFrames {
 		if el, ok := s.findQRCodeElementInChildFrames(ctx, s.page); ok {
+			logrus.WithField("source", "frame").Info("login qrcode element found")
 			return el, nil
 		}
 	}
 
+	logrus.WithFields(logrus.Fields{
+		"prefer_frames": preferFrames,
+	}).Info("login qrcode element not found")
 	return nil, errors.New("login qrcode element not found")
 }
 
 func (s *rodLoginSession) frameHasSecurityHint(ctx context.Context, frame qrFrame) bool {
 	frames, err := frame.Frames(ctx)
+	logrus.WithFields(logrus.Fields{
+		"count": len(frames),
+		"err":   err,
+	}).Info("login qrcode scan frames")
 	if err != nil {
 		return false
 	}
 	for _, child := range frames {
 		ok, err := child.HasR(ctx, "body", securityHintRegexp)
+		logrus.WithFields(logrus.Fields{
+			"match": ok,
+			"err":   err,
+		}).Info("login qrcode security hint on frame")
 		if err == nil && ok {
 			return true
 		}
