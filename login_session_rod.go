@@ -28,6 +28,7 @@ var qrSelectors = []string{
 const (
 	qrFallbackRegex    = "二维码|扫码"
 	securityHintRegexp = "安全认证|安全验证|风险验证|二次验证|安全校验|扫码验证|验证身份|保护账号安全|二维码.*失效"
+	scanSuccessRegexp  = "扫码成功|手机上确认|重新扫码"
 )
 
 type qrElement interface {
@@ -217,9 +218,14 @@ func (s *rodLoginSession) Close() error {
 
 func (s *rodLoginSession) hasSecurityHint(ctx context.Context) bool {
 	ok, err := s.page.HasR(ctx, "body", securityHintRegexp)
+	scanOK, scanErr := s.page.HasR(ctx, "body", scanSuccessRegexp)
 	logrus.WithFields(logrus.Fields{
-		"match": ok,
-		"err":   err,
+		"match":       ok,
+		"err":         err,
+		"scan_match":  scanOK,
+		"scan_err":    scanErr,
+		"scan_regex":  scanSuccessRegexp,
+		"security_re": securityHintRegexp,
 	}).Info("login qrcode security hint on page")
 	if err == nil && ok {
 		return true
@@ -276,9 +282,14 @@ func (s *rodLoginSession) frameHasSecurityHint(ctx context.Context, frame qrFram
 	}
 	for _, child := range frames {
 		ok, err := child.HasR(ctx, "body", securityHintRegexp)
+		scanOK, scanErr := child.HasR(ctx, "body", scanSuccessRegexp)
 		logrus.WithFields(logrus.Fields{
-			"match": ok,
-			"err":   err,
+			"match":       ok,
+			"err":         err,
+			"scan_match":  scanOK,
+			"scan_err":    scanErr,
+			"scan_regex":  scanSuccessRegexp,
+			"security_re": securityHintRegexp,
 		}).Info("login qrcode security hint on frame")
 		if err == nil && ok {
 			return true
