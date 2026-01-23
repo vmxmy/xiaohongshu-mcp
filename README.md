@@ -920,6 +920,7 @@ ls -lh bin/
 说明：
 - `get_login_qrcode` 可能先返回登录二维码，扫码后再返回安全认证二维码，请重复调用直到提示已登录。
 - 无 GUI 环境可使用 `npx @modelcontextprotocol/inspector` 查看返回的二维码图片进行扫码。
+- `get_login_qrcode` 返回 `stage/status/session_id`，便于判断阶段与排查登录流程。
 
 #### 内容浏览
 - `list_feeds` - 获取首页Feeds列表
