@@ -27,6 +27,7 @@ type fakeQRPage struct {
 	text          string
 	elements      map[string]*fakeQRElement
 	elementR      *fakeQRElement
+	frames        []qrFrame
 	closed        bool
 }
 
@@ -77,9 +78,49 @@ func (f *fakeQRPage) ElementR(_ context.Context, _ string, _ string) (qrElement,
 	return f.elementR, nil
 }
 
+func (f *fakeQRPage) Frames(_ context.Context) ([]qrFrame, error) {
+	return f.frames, nil
+}
+
 func (f *fakeQRPage) Close() error {
 	f.closed = true
 	return nil
+}
+
+type fakeQRFrame struct {
+	text     string
+	elements map[string]*fakeQRElement
+	frames   []qrFrame
+}
+
+func (f *fakeQRFrame) HasR(_ context.Context, _ string, jsRegex string) (bool, error) {
+	if f.text == "" {
+		return false, nil
+	}
+	re, err := regexp.Compile(jsRegex)
+	if err != nil {
+		return false, err
+	}
+	return re.MatchString(f.text), nil
+}
+
+func (f *fakeQRFrame) Element(_ context.Context, selector string) (qrElement, error) {
+	if f.elements == nil {
+		return nil, errors.New("not found")
+	}
+	el, ok := f.elements[selector]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	return el, nil
+}
+
+func (f *fakeQRFrame) ElementR(_ context.Context, _ string, _ string) (qrElement, error) {
+	return nil, errors.New("not found")
+}
+
+func (f *fakeQRFrame) Frames(_ context.Context) ([]qrFrame, error) {
+	return f.frames, nil
 }
 
 func TestRodLoginSession_Open(t *testing.T) {
@@ -145,6 +186,33 @@ func TestRodLoginSession_QRCode_SecurityStage(t *testing.T) {
 	}
 	if got.Stage != "security" {
 		t.Fatalf("expected security stage")
+	}
+}
+
+func TestRodLoginSession_QRCode_SecurityPrefersFrameQRCode(t *testing.T) {
+	frame := &fakeQRFrame{
+		text: "扫码验证",
+		elements: map[string]*fakeQRElement{
+			".login-container .qrcode-img": {image: []byte("frame")},
+		},
+	}
+	page := &fakeQRPage{
+		elements: map[string]*fakeQRElement{
+			".login-container .qrcode-img": {image: []byte("page")},
+		},
+		frames: []qrFrame{frame},
+	}
+	session := rodLoginSession{page: page, sleep: func(time.Duration) {}}
+
+	got, err := session.QRCode(context.Background())
+	if err != nil {
+		t.Fatalf("QRCode err: %v", err)
+	}
+	if got.Stage != "security" {
+		t.Fatalf("expected security stage")
+	}
+	if got.Image != base64.StdEncoding.EncodeToString([]byte("frame")) {
+		t.Fatalf("expected frame qrcode")
 	}
 }
 

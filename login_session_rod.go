@@ -33,13 +33,18 @@ type qrElement interface {
 	Screenshot(format proto.PageCaptureScreenshotFormat, quality int) ([]byte, error)
 }
 
-type qrPage interface {
-	Navigate(ctx context.Context, url string) error
-	WaitLoad(ctx context.Context) error
-	Has(ctx context.Context, selector string) (bool, error)
+type qrFrame interface {
 	HasR(ctx context.Context, selector, jsRegex string) (bool, error)
 	Element(ctx context.Context, selector string) (qrElement, error)
 	ElementR(ctx context.Context, selector, jsRegex string) (qrElement, error)
+	Frames(ctx context.Context) ([]qrFrame, error)
+}
+
+type qrPage interface {
+	qrFrame
+	Navigate(ctx context.Context, url string) error
+	WaitLoad(ctx context.Context) error
+	Has(ctx context.Context, selector string) (bool, error)
 	Close() error
 }
 
@@ -73,8 +78,52 @@ func (r *rodPageAdapter) ElementR(ctx context.Context, selector, jsRegex string)
 	return r.page.Context(ctx).ElementR(selector, jsRegex)
 }
 
+func (r *rodPageAdapter) Frames(ctx context.Context) ([]qrFrame, error) {
+	return framesForPage(ctx, r.page)
+}
+
 func (r *rodPageAdapter) Close() error {
 	return r.page.Close()
+}
+
+type rodFrameAdapter struct {
+	page *rod.Page
+}
+
+func (r *rodFrameAdapter) HasR(ctx context.Context, selector, jsRegex string) (bool, error) {
+	ok, _, err := r.page.Context(ctx).HasR(selector, jsRegex)
+	return ok, err
+}
+
+func (r *rodFrameAdapter) Element(ctx context.Context, selector string) (qrElement, error) {
+	return r.page.Context(ctx).Element(selector)
+}
+
+func (r *rodFrameAdapter) ElementR(ctx context.Context, selector, jsRegex string) (qrElement, error) {
+	return r.page.Context(ctx).ElementR(selector, jsRegex)
+}
+
+func (r *rodFrameAdapter) Frames(ctx context.Context) ([]qrFrame, error) {
+	return framesForPage(ctx, r.page)
+}
+
+func framesForPage(ctx context.Context, page *rod.Page) ([]qrFrame, error) {
+	frames := []qrFrame{}
+	if page == nil {
+		return frames, nil
+	}
+	iframes, err := page.Context(ctx).Elements("iframe")
+	if err != nil {
+		return frames, err
+	}
+	for _, el := range iframes {
+		framePage, err := el.Context(ctx).Frame()
+		if err != nil {
+			continue
+		}
+		frames = append(frames, &rodFrameAdapter{page: framePage})
+	}
+	return frames, nil
 }
 
 type rodLoginSession struct {
@@ -131,7 +180,7 @@ func (s *rodLoginSession) QRCode(ctx context.Context) (loginQRCode, error) {
 		stage = "security"
 	}
 
-	el, err := s.findQRCodeElement(ctx)
+	el, err := s.findQRCodeElement(ctx, stage == "security")
 	if err != nil {
 		return loginQRCode{}, err
 	}
@@ -165,13 +214,19 @@ func (s *rodLoginSession) Close() error {
 
 func (s *rodLoginSession) hasSecurityHint(ctx context.Context) bool {
 	ok, err := s.page.HasR(ctx, "body", securityHintRegexp)
-	if err != nil {
-		return false
+	if err == nil && ok {
+		return true
 	}
-	return ok
+	return s.frameHasSecurityHint(ctx, s.page)
 }
 
-func (s *rodLoginSession) findQRCodeElement(ctx context.Context) (qrElement, error) {
+func (s *rodLoginSession) findQRCodeElement(ctx context.Context, preferFrames bool) (qrElement, error) {
+	if preferFrames {
+		if el, ok := s.findQRCodeElementInChildFrames(ctx, s.page); ok {
+			return el, nil
+		}
+	}
+
 	for _, selector := range qrSelectors {
 		el, err := s.page.Element(ctx, selector)
 		if err == nil && el != nil {
@@ -184,5 +239,66 @@ func (s *rodLoginSession) findQRCodeElement(ctx context.Context) (qrElement, err
 		return el, nil
 	}
 
+	if !preferFrames {
+		if el, ok := s.findQRCodeElementInChildFrames(ctx, s.page); ok {
+			return el, nil
+		}
+	}
+
 	return nil, errors.New("login qrcode element not found")
+}
+
+func (s *rodLoginSession) frameHasSecurityHint(ctx context.Context, frame qrFrame) bool {
+	frames, err := frame.Frames(ctx)
+	if err != nil {
+		return false
+	}
+	for _, child := range frames {
+		ok, err := child.HasR(ctx, "body", securityHintRegexp)
+		if err == nil && ok {
+			return true
+		}
+		if s.frameHasSecurityHint(ctx, child) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *rodLoginSession) findQRCodeElementInFrame(ctx context.Context, frame qrFrame) (qrElement, bool) {
+	for _, selector := range qrSelectors {
+		el, err := frame.Element(ctx, selector)
+		if err == nil && el != nil {
+			return el, true
+		}
+	}
+
+	el, err := frame.ElementR(ctx, "div", qrFallbackRegex)
+	if err == nil && el != nil {
+		return el, true
+	}
+
+	frames, err := frame.Frames(ctx)
+	if err != nil {
+		return nil, false
+	}
+	for _, child := range frames {
+		if el, ok := s.findQRCodeElementInFrame(ctx, child); ok {
+			return el, true
+		}
+	}
+	return nil, false
+}
+
+func (s *rodLoginSession) findQRCodeElementInChildFrames(ctx context.Context, frame qrFrame) (qrElement, bool) {
+	frames, err := frame.Frames(ctx)
+	if err != nil {
+		return nil, false
+	}
+	for _, child := range frames {
+		if el, ok := s.findQRCodeElementInFrame(ctx, child); ok {
+			return el, true
+		}
+	}
+	return nil, false
 }
