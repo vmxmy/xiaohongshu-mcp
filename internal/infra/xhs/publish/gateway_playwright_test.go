@@ -86,3 +86,32 @@ func TestGateway_PublishImage_UsesSelectors(t *testing.T) {
 		t.Fatalf("expected page calls")
 	}
 }
+
+func TestGateway_PublishVideo_UsesSelectors(t *testing.T) {
+	engine := &fakeEngine{page: &fakePage{}}
+	cfg := Config{
+		PublishImageURL: "https://example.com",
+		PublishVideoURL: "https://example.com",
+		Selectors: map[string]string{
+			"upload_input": "input[type=file]",
+			"title_input":  "input[name=title]",
+			"content":      "textarea[name=content]",
+			"submit":       "button[type=submit]",
+		},
+	}
+	gw, err := NewGateway(cfg, engine)
+	if err != nil {
+		t.Fatalf("new gateway err: %v", err)
+	}
+	err = gw.PublishVideo(context.Background(), publish.VideoContent{
+		Title:     "t",
+		Content:   "c",
+		VideoPath: "1.mp4",
+	})
+	if err != nil {
+		t.Fatalf("publish err: %v", err)
+	}
+	if len(engine.page.Calls) == 0 {
+		t.Fatalf("expected page calls")
+	}
+}
