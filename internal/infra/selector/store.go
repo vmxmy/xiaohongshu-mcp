@@ -8,11 +8,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type Store struct {
+type FileStore struct {
 	Path string
 }
 
-func (s Store) Load() (map[string]string, error) {
+func (s FileStore) Load() (map[string]string, error) {
 	data, err := os.ReadFile(s.Path)
 	if err != nil {
 		return nil, err
@@ -24,7 +24,7 @@ func (s Store) Load() (map[string]string, error) {
 	return out, nil
 }
 
-func (s Store) Save(selectors map[string]string) error {
+func (s FileStore) Save(selectors map[string]string) error {
 	data, err := yaml.Marshal(selectors)
 	if err != nil {
 		return err
@@ -32,7 +32,7 @@ func (s Store) Save(selectors map[string]string) error {
 	return os.WriteFile(s.Path, data, 0644)
 }
 
-func (s Store) Snapshot() (string, error) {
+func (s FileStore) Snapshot() (string, error) {
 	ts := time.Now().Format("20060102-150405")
 	dst := s.Path + "." + ts + ".bak"
 	data, err := os.ReadFile(s.Path)
@@ -45,7 +45,7 @@ func (s Store) Snapshot() (string, error) {
 	return filepath.Base(dst), nil
 }
 
-func (s Store) Rollback(snapshot string) error {
+func (s FileStore) Rollback(snapshot string) error {
 	src := filepath.Join(filepath.Dir(s.Path), snapshot)
 	data, err := os.ReadFile(src)
 	if err != nil {

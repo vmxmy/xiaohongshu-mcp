@@ -12,7 +12,7 @@ func TestStore_SnapshotAndRollback(t *testing.T) {
 	if err := os.WriteFile(path, []byte("a: b\n"), 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	store := Store{Path: path}
+	store := FileStore{Path: path}
 	snap, err := store.Snapshot()
 	if err != nil || snap == "" {
 		t.Fatalf("snapshot err: %v", err)
