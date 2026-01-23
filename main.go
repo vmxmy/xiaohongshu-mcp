@@ -27,7 +27,8 @@ func main() {
 	configs.SetBinPath(binPath)
 
 	// 初始化服务
-	xiaohongshuService := NewXiaohongshuService()
+	publishUsecase := initPublishUsecase(headless)
+	xiaohongshuService := NewXiaohongshuServiceWithUsecase(publishUsecase)
 
 	// 创建并启动应用服务器
 	appServer := NewAppServer(xiaohongshuService)

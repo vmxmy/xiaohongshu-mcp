@@ -66,21 +66,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxss1 \
     libxtst6 \
     lsb-release \
+    nodejs \
+    npm \
     wget \
     xdg-utils \
     google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
+# 4. 安装 Playwright 浏览器与依赖（无 GUI 环境）
+RUN npx playwright install --with-deps chromium
+
 COPY --from=builder /out/app .
 
-# 4. 创建共享目录并设置权限
+# 5. 创建共享目录并设置权限
 RUN mkdir -p /app/images && \
     chmod 777 /app/images
 
-# 5. 设置默认 Chrome 路径（rod 会用）
+# 6. 设置默认 Chrome 路径（rod 会用）
 ENV ROD_BROWSER_BIN=/usr/bin/google-chrome
 
 EXPOSE 18060
 
 CMD ["./app"]
-

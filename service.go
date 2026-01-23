@@ -11,6 +11,8 @@ import (
 	"github.com/mattn/go-runewidth"
 	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/headless_browser"
+	apppublish "github.com/xpzouying/xiaohongshu-mcp/internal/app/publish"
+	domainpublish "github.com/xpzouying/xiaohongshu-mcp/internal/domain/publish"
 	"github.com/xpzouying/xiaohongshu-mcp/browser"
 	"github.com/xpzouying/xiaohongshu-mcp/configs"
 	"github.com/xpzouying/xiaohongshu-mcp/cookies"
@@ -19,11 +21,18 @@ import (
 )
 
 // XiaohongshuService 小红书业务服务
-type XiaohongshuService struct{}
+type XiaohongshuService struct {
+	publishUsecase *apppublish.Usecase
+}
 
 // NewXiaohongshuService 创建小红书服务实例
 func NewXiaohongshuService() *XiaohongshuService {
-	return &XiaohongshuService{}
+	return NewXiaohongshuServiceWithUsecase(nil)
+}
+
+// NewXiaohongshuServiceWithUsecase 支持注入发布用例
+func NewXiaohongshuServiceWithUsecase(publishUsecase *apppublish.Usecase) *XiaohongshuService {
+	return &XiaohongshuService{publishUsecase: publishUsecase}
 }
 
 // PublishRequest 发布请求
@@ -216,10 +225,23 @@ func (s *XiaohongshuService) PublishContent(ctx context.Context, req *PublishReq
 		ScheduleTime: scheduleTime,
 	}
 
-	// 执行发布
-	if err := s.publishContent(ctx, content); err != nil {
-		logrus.Errorf("发布内容失败: title=%s %v", content.Title, err)
-		return nil, err
+	// 执行发布（优先使用新用例）
+	if s.publishUsecase != nil {
+		if err := s.publishUsecase.PublishImage(ctx, domainpublish.ImageContent{
+			Title:        content.Title,
+			Content:      content.Content,
+			Tags:         content.Tags,
+			ImagePaths:   content.ImagePaths,
+			ScheduleTime: content.ScheduleTime,
+		}); err != nil {
+			logrus.Errorf("发布内容失败(新用例): title=%s %v", content.Title, err)
+			return nil, err
+		}
+	} else {
+		if err := s.publishContent(ctx, content); err != nil {
+			logrus.Errorf("发布内容失败: title=%s %v", content.Title, err)
+			return nil, err
+		}
 	}
 
 	response := &PublishResponse{
