@@ -1,0 +1,8 @@
+urls:
+  creator:
+    publish_image: "https://example.com/publish?target=image"
+    publish_video: "https://example.com/publish?target=video"
+limits:
+  max_tags: 10
+  min_images: 1
+  max_images: 9
