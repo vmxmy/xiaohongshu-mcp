@@ -26,7 +26,7 @@ var qrSelectors = []string{
 
 const (
 	qrFallbackRegex    = "二维码|扫码"
-	securityHintRegexp = "安全认证|安全验证|风险验证|二次验证|安全校验"
+	securityHintRegexp = "安全认证|安全验证|风险验证|二次验证|安全校验|扫码验证|验证身份|保护账号安全|二维码.*失效"
 )
 
 type qrElement interface {

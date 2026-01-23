@@ -132,7 +132,7 @@ func TestRodLoginSession_QRCode_LoginStage(t *testing.T) {
 
 func TestRodLoginSession_QRCode_SecurityStage(t *testing.T) {
 	page := &fakeQRPage{
-		text: "需要进行安全认证",
+		text: "扫码验证",
 		elements: map[string]*fakeQRElement{
 			".login-container .qrcode-img": {image: []byte("png")},
 		},

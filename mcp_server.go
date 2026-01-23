@@ -584,41 +584,49 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 		}),
 	)
 
-	// 工具 19: 获取个人统计数据
-	mcp.AddTool(server,
-		&mcp.Tool{
-			Name:        "get_my_stats",
-			Description: "获取当前用户的统计数据（粉丝数、关注数、获赞数、笔记数等）",
-			Annotations: &mcp.ToolAnnotations{
-				Title: "Get My Stats",
-			},
-		},
-		withPanicRecovery("get_my_stats", func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
-			result := appServer.handleGetMyStats(ctx)
-			return convertToMCPResult(result), nil, nil
-		}),
-	)
+	// 工具 19: 获取个人统计数据 [已禁用 - 2026-01-22]
+	// 原因: 数据提取功能暂时无法正确获取统计信息
+	// TODO: Investigate data extraction from creator dashboard
+	// 相关 handler: handleGetMyStats (mcp_handlers.go:992-1024)
+	// 相关 service: GetMyStats (service.go:733-748)
+	// mcp.AddTool(server,
+	// 	&mcp.Tool{
+	// 		Name:        "get_my_stats",
+	// 		Description: "获取当前用户的统计数据（粉丝数、关注数、获赞数、笔记数等）",
+	// 		Annotations: &mcp.ToolAnnotations{
+	// 			Title: "Get My Stats",
+	// 		},
+	// 	},
+	// 	withPanicRecovery("get_my_stats", func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+	// 		result := appServer.handleGetMyStats(ctx)
+	// 		return convertToMCPResult(result), nil, nil
+	// 	}),
+	// )
 
-	// 工具 20: 获取自己的笔记列表
-	mcp.AddTool(server,
-		&mcp.Tool{
-			Name:        "get_my_feeds",
-			Description: "获取自己发布的笔记列表",
-			Annotations: &mcp.ToolAnnotations{
-				Title: "Get My Feeds",
-			},
-		},
-		withPanicRecovery("get_my_feeds", func(ctx context.Context, req *mcp.CallToolRequest, args GetMyFeedsArgs) (*mcp.CallToolResult, any, error) {
-			if args.Limit == 0 {
-				args.Limit = 20
-			}
-			if args.Limit > 100 {
-				args.Limit = 100
-			}
-			result := appServer.handleGetMyFeeds(ctx, args.Limit)
-			return convertToMCPResult(result), nil, nil
-		}),
-	)
+	// 工具 20: 获取自己的笔记列表 [已禁用 - 2026-01-22]
+	// 原因: 数据提取功能暂时无法正确获取笔记列表
+	// TODO: Investigate data extraction from user profile page
+	// 相关 handler: handleGetMyFeeds (mcp_handlers.go:1027-1059)
+	// 相关 service: GetMyFeeds (service.go:751-766)
+	// mcp.AddTool(server,
+	// 	&mcp.Tool{
+	// 		Name:        "get_my_feeds",
+	// 		Description: "获取自己发布的笔记列表",
+	// 		Annotations: &mcp.ToolAnnotations{
+	// 			Title: "Get My Feeds",
+	// 		},
+	// 	},
+	// 	withPanicRecovery("get_my_feeds", func(ctx context.Context, req *mcp.CallToolRequest, args GetMyFeedsArgs) (*mcp.CallToolResult, any, error) {
+	// 		if args.Limit == 0 {
+	// 			args.Limit = 20
+	// 		}
+	// 		if args.Limit > 100 {
+	// 			args.Limit = 100
+	// 		}
+	// 		result := appServer.handleGetMyFeeds(ctx, args.Limit)
+	// 		return convertToMCPResult(result), nil, nil
+	// 	}),
+	// )
 
 	// 工具 23: 获取粉丝分析数据
 	mcp.AddTool(server,
@@ -659,7 +667,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 		}),
 	)
 
-	logrus.Infof("Registered %d MCP tools", 24)
+	logrus.Infof("Registered %d MCP tools", 22)
 }
 
 // convertToMCPResult 将自定义的 MCPToolResult 转换为官方 SDK 的格式

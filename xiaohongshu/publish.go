@@ -2,8 +2,10 @@ package xiaohongshu
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"math/rand"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -29,7 +31,9 @@ type PublishAction struct {
 }
 
 const (
-	urlOfPublic = `https://creator.xiaohongshu.com/publish/publish?source=official`
+	// 直接访问图文上传页面，避免需要点击TAB切换
+	// 小红书页面更新后，原URL默认打开视频上传页，需添加 target=image 参数
+	urlOfPublic = `https://creator.xiaohongshu.com/publish/publish?source=official&target=image`
 )
 
 func NewPublishImageAction(page *rod.Page) (*PublishAction, error) {
@@ -72,6 +76,57 @@ func (p *PublishAction) Publish(ctx context.Context, content PublishImageContent
 
 	page := p.page.Context(ctx)
 
+	// 启用网络监听来捕获API响应
+	router := page.HijackRequests()
+	defer router.Stop()
+
+	// 捕获发布相关的网络请求
+	publishResponse := make(chan string, 1)
+	publishError := make(chan error, 1)
+
+	router.MustAdd("*/web_api/sns/*", func(ctx *rod.Hijack) {
+		// 让请求继续
+		ctx.ContinueRequest(&proto.FetchContinueRequest{})
+
+		// 等待响应
+		ctx.LoadResponse(http.DefaultClient, true)
+
+		slog.Info("捕获到小红书API请求",
+			"url", ctx.Request.URL().String(),
+			"method", ctx.Request.Method(),
+			"status", ctx.Response.Payload().ResponseCode)
+
+		// 检查是否是发布请求
+		if strings.Contains(ctx.Request.URL().String(), "note") {
+			body := ctx.Response.Body()
+			slog.Info("小红书API响应体", "body", body)
+
+			// 解析响应
+			var apiResp map[string]interface{}
+			if err := json.Unmarshal([]byte(body), &apiResp); err == nil {
+				// 检查是否成功
+				if success, ok := apiResp["success"].(bool); ok && success {
+					publishResponse <- body
+				} else if code, ok := apiResp["code"].(float64); ok {
+					if code == 0 {
+						publishResponse <- body
+					} else {
+						// 提取错误信息
+						msg := "未知错误"
+						if message, ok := apiResp["msg"].(string); ok {
+							msg = message
+						} else if message, ok := apiResp["message"].(string); ok {
+							msg = message
+						}
+						publishError <- errors.Errorf("小红书API返回错误: code=%v, msg=%s", code, msg)
+					}
+				}
+			}
+		}
+	})
+
+	go router.Run()
+
 	if err := uploadImages(page, content.ImagePaths); err != nil {
 		return errors.Wrap(err, "小红书上传图片失败")
 	}
@@ -88,7 +143,18 @@ func (p *PublishAction) Publish(ctx context.Context, content PublishImageContent
 		return errors.Wrap(err, "小红书发布失败")
 	}
 
-	return nil
+	// 等待API响应
+	select {
+	case resp := <-publishResponse:
+		slog.Info("发布成功，收到API确认", "response", resp)
+		return nil
+	case err := <-publishError:
+		return err
+	case <-time.After(30 * time.Second):
+		// 超时，使用原有的UI检测
+		slog.Warn("API响应超时，尝试UI检测")
+		return waitForPublishResultUI(page)
+	}
 }
 
 func removePopCover(page *rod.Page) {
@@ -296,9 +362,104 @@ func submitPublish(page *rod.Page, title, content string, tags []string, schedul
 	submitButton := page.MustElement("div.submit div.d-button-content")
 	submitButton.MustClick()
 
-	time.Sleep(3 * time.Second)
+	slog.Info("已点击发布按钮，等待API响应...")
 
 	return nil
+}
+
+// checkForErrorMessage 检查页面是否有错误提示
+func checkForErrorMessage(page *rod.Page) (bool, string) {
+	// 常见的错误提示元素选择器
+	errorSelectors := []string{
+		".el-message--error .el-message__content",
+		".d-message--error",
+		".error-message",
+		"div[class*='error']",
+	}
+
+	for _, selector := range errorSelectors {
+		has, elem, err := page.Has(selector)
+		if err != nil || !has {
+			continue
+		}
+
+		// 检查元素是否可见
+		if visible, _ := elem.Visible(); !visible {
+			continue
+		}
+
+		// 获取错误消息
+		if text, err := elem.Text(); err == nil && text != "" {
+			return true, text
+		}
+	}
+
+	return false, ""
+}
+
+// checkForSuccessDialog 检查是否有成功提示弹窗
+func checkForSuccessDialog(page *rod.Page) (bool, string) {
+	// 成功提示的选择器
+	successSelectors := []string{
+		".el-message--success .el-message__content",
+		".d-message--success",
+		".success-message",
+	}
+
+	for _, selector := range successSelectors {
+		has, elem, err := page.Has(selector)
+		if err != nil || !has {
+			continue
+		}
+
+		// 检查元素是否可见
+		if visible, _ := elem.Visible(); !visible {
+			continue
+		}
+
+		// 获取成功消息
+		if text, err := elem.Text(); err == nil && text != "" {
+			return true, text
+		}
+	}
+
+	// 检查是否跳转到了内容管理页面
+	url := page.MustInfo().URL
+	if strings.Contains(url, "creator.xiaohongshu.com/creator/post") {
+		slog.Info("检测到页面跳转到内容管理页", "url", url)
+		return true, "页面已跳转到内容管理"
+	}
+
+	return false, ""
+}
+
+// checkSubmitButtonState 检查提交按钮状态
+func checkSubmitButtonState(page *rod.Page) bool {
+	has, elem, err := page.Has("div.submit div.d-button-content")
+	if err != nil || !has {
+		return false
+	}
+
+	// 检查按钮是否被禁用
+	parent, err := elem.Parent()
+	if err != nil {
+		return false
+	}
+
+	// 检查是否有 disabled 类名或属性
+	className, err := parent.Attribute("class")
+	if err == nil && className != nil {
+		if strings.Contains(*className, "disabled") || strings.Contains(*className, "is-disabled") {
+			return true
+		}
+	}
+
+	disabled, err := parent.Attribute("disabled")
+	if err == nil && disabled != nil {
+		return true
+	}
+
+	return false
 }
 
 // 检查标题是否超过最大长度
