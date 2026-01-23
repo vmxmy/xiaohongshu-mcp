@@ -167,6 +167,14 @@ func (s *rodLoginSession) LoggedIn(ctx context.Context) (bool, error) {
 		return false, errors.New("login page not initialized")
 	}
 	ok, err := s.page.Has(ctx, loginStatusSelector)
+	loginVisible, loginErr := s.page.Has(ctx, ".login-container")
+	logrus.WithFields(logrus.Fields{
+		"login_status_selector": loginStatusSelector,
+		"login_status_match":    ok,
+		"login_status_err":      err,
+		"login_container_match": loginVisible,
+		"login_container_err":   loginErr,
+	}).Info("login status selector check")
 	if err != nil {
 		return false, err
 	}
