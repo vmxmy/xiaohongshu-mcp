@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -97,6 +99,59 @@ func (s *AppServer) handleGetLoginQrcode(ctx context.Context) *MCPToolResult {
 		},
 	}
 	return &MCPToolResult{Content: contents}
+}
+
+func parseSyncCookiesPayload(args SyncCookiesArgs) ([]byte, error) {
+	if strings.TrimSpace(args.CookiesBase64) != "" {
+		data, err := base64.StdEncoding.DecodeString(args.CookiesBase64)
+		if err != nil {
+			return nil, fmt.Errorf("cookies_base64 解码失败: %w", err)
+		}
+		return data, nil
+	}
+	if strings.TrimSpace(args.CookiesJSON) != "" {
+		return []byte(args.CookiesJSON), nil
+	}
+	return nil, errors.New("cookies_base64 或 cookies_json 至少提供一个")
+}
+
+func validateCookiesJSON(data []byte) error {
+	var items []map[string]any
+	if err := json.Unmarshal(data, &items); err != nil {
+		return fmt.Errorf("cookies JSON 无法解析: %w", err)
+	}
+	return nil
+}
+
+// handleSyncCookies 处理上传 cookies 请求。
+func (s *AppServer) handleSyncCookies(ctx context.Context, args SyncCookiesArgs) *MCPToolResult {
+	logrus.Info("MCP: 上传 cookies")
+
+	payload, err := parseSyncCookiesPayload(args)
+	if err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{Type: "text", Text: "cookies 输入无效: " + err.Error()}},
+			IsError: true,
+		}
+	}
+	if err := validateCookiesJSON(payload); err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{Type: "text", Text: "cookies JSON 校验失败: " + err.Error()}},
+			IsError: true,
+		}
+	}
+
+	path, size, err := s.xiaohongshuService.SyncCookies(ctx, payload)
+	if err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{Type: "text", Text: "保存 cookies 失败: " + err.Error()}},
+			IsError: true,
+		}
+	}
+	logrus.WithFields(logrus.Fields{"path": path, "bytes": size}).Info("cookies 已写入")
+	return &MCPToolResult{
+		Content: []MCPContent{{Type: "text", Text: fmt.Sprintf("cookies 已写入: %s (%d bytes)", path, size)}},
+	}
 }
 
 // handleDeleteCookies 处理删除 cookies 请求，用于登录重置

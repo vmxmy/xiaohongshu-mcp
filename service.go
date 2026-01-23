@@ -12,11 +12,11 @@ import (
 	"github.com/mattn/go-runewidth"
 	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/headless_browser"
-	apppublish "github.com/xpzouying/xiaohongshu-mcp/internal/app/publish"
-	domainpublish "github.com/xpzouying/xiaohongshu-mcp/internal/domain/publish"
 	"github.com/xpzouying/xiaohongshu-mcp/browser"
 	"github.com/xpzouying/xiaohongshu-mcp/configs"
 	"github.com/xpzouying/xiaohongshu-mcp/cookies"
+	apppublish "github.com/xpzouying/xiaohongshu-mcp/internal/app/publish"
+	domainpublish "github.com/xpzouying/xiaohongshu-mcp/internal/domain/publish"
 	"github.com/xpzouying/xiaohongshu-mcp/pkg/downloader"
 	"github.com/xpzouying/xiaohongshu-mcp/xiaohongshu"
 )
@@ -114,6 +114,16 @@ func (s *XiaohongshuService) DeleteCookies(ctx context.Context) error {
 	cookiePath := cookies.GetCookiesFilePath()
 	cookieLoader := cookies.NewLoadCookie(cookiePath)
 	return cookieLoader.DeleteCookies()
+}
+
+// SyncCookies 写入 cookies 文件，供无头模式加载。
+func (s *XiaohongshuService) SyncCookies(ctx context.Context, data []byte) (string, int64, error) {
+	cookiePath := cookies.GetCookiesFilePath()
+	cookieLoader := cookies.NewLoadCookie(cookiePath)
+	if err := cookieLoader.SaveCookies(data); err != nil {
+		return "", 0, err
+	}
+	return cookiePath, int64(len(data)), nil
 }
 
 // CheckLoginStatus 检查登录状态

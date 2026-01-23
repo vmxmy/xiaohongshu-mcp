@@ -33,6 +33,12 @@ type PublishVideoArgs struct {
 	ScheduleAt string   `json:"schedule_at,omitempty" jsonschema:"定时发布时间（可选），ISO8601格式如 2024-01-20T10:30:00+08:00，支持1小时至14天内。不填则立即发布"`
 }
 
+// SyncCookiesArgs 上传 cookies 参数
+type SyncCookiesArgs struct {
+	CookiesBase64 string `json:"cookies_base64,omitempty" jsonschema:"Base64 编码的 cookies JSON（推荐）"`
+	CookiesJSON   string `json:"cookies_json,omitempty" jsonschema:"cookies JSON 字符串（备用）"`
+}
+
 // SearchFeedsArgs 搜索内容的参数
 type SearchFeedsArgs struct {
 	Keyword string       `json:"keyword" jsonschema:"搜索关键词"`
@@ -246,6 +252,21 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 		},
 		withPanicRecovery("delete_cookies", func(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
 			result := appServer.handleDeleteCookies(ctx)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	// 工具 3.1: 上传 cookies
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "sync_cookies",
+			Description: "上传 cookies JSON 并写入服务端文件（推荐先本地有头登录后上传）",
+			Annotations: &mcp.ToolAnnotations{
+				Title: "Sync Cookies",
+			},
+		},
+		withPanicRecovery("sync_cookies", func(ctx context.Context, req *mcp.CallToolRequest, args SyncCookiesArgs) (*mcp.CallToolResult, any, error) {
+			result := appServer.handleSyncCookies(ctx, args)
 			return convertToMCPResult(result), nil, nil
 		}),
 	)
@@ -667,7 +688,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 		}),
 	)
 
-	logrus.Infof("Registered %d MCP tools", 22)
+	logrus.Infof("Registered %d MCP tools", 23)
 }
 
 // convertToMCPResult 将自定义的 MCPToolResult 转换为官方 SDK 的格式

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -65,5 +66,38 @@ func TestLoginQrcodeHandler_TextIncludesStatusAndSession(t *testing.T) {
 	}
 	if !strings.Contains(result.Content[0].Text, "sess-1") {
 		t.Fatalf("expected session id")
+	}
+}
+
+func TestParseSyncCookiesPayload_Base64(t *testing.T) {
+	data := []byte(`[{"name":"a"}]`)
+	args := SyncCookiesArgs{CookiesBase64: base64.StdEncoding.EncodeToString(data)}
+
+	got, err := parseSyncCookiesPayload(args)
+	if err != nil {
+		t.Fatalf("parse err: %v", err)
+	}
+	if string(got) != string(data) {
+		t.Fatalf("unexpected payload")
+	}
+}
+
+func TestParseSyncCookiesPayload_JSON(t *testing.T) {
+	data := []byte(`[{"name":"a"}]`)
+	args := SyncCookiesArgs{CookiesJSON: string(data)}
+
+	got, err := parseSyncCookiesPayload(args)
+	if err != nil {
+		t.Fatalf("parse err: %v", err)
+	}
+	if string(got) != string(data) {
+		t.Fatalf("unexpected payload")
+	}
+}
+
+func TestParseSyncCookiesPayload_Missing(t *testing.T) {
+	_, err := parseSyncCookiesPayload(SyncCookiesArgs{})
+	if err == nil {
+		t.Fatalf("expected error")
 	}
 }
