@@ -74,9 +74,14 @@ func (s *AppServer) handleGetLoginQrcode(ctx context.Context) *MCPToolResult {
 		return now.Add(d).Format("2006-01-02 15:04:05")
 	}()
 
+	text := "请用小红书 App 在 " + deadline + " 前扫码登录 👇"
+	if strings.EqualFold(result.Stage, "security") {
+		text = "请用小红书 App 在 " + deadline + " 前扫码完成安全认证 👇"
+	}
+
 	// 已登录：文本 + 图片
 	contents := []MCPContent{
-		{Type: "text", Text: "请用小红书 App 在 " + deadline + " 前扫码登录 👇"},
+		{Type: "text", Text: text},
 		{
 			Type:     "image",
 			MimeType: "image/png",

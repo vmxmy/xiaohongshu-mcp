@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -20,9 +21,14 @@ import (
 	"github.com/xpzouying/xiaohongshu-mcp/xiaohongshu"
 )
 
+type loginProvider interface {
+	GetQRCode(ctx context.Context) (loginQRResult, error)
+}
+
 // XiaohongshuService 小红书业务服务
 type XiaohongshuService struct {
 	publishUsecase *apppublish.Usecase
+	loginManager   loginProvider
 }
 
 // NewXiaohongshuService 创建小红书服务实例
@@ -32,7 +38,10 @@ func NewXiaohongshuService() *XiaohongshuService {
 
 // NewXiaohongshuServiceWithUsecase 支持注入发布用例
 func NewXiaohongshuServiceWithUsecase(publishUsecase *apppublish.Usecase) *XiaohongshuService {
-	return &XiaohongshuService{publishUsecase: publishUsecase}
+	return &XiaohongshuService{
+		publishUsecase: publishUsecase,
+		loginManager:   NewLoginManager(newRodLoginSession, 4*time.Minute),
+	}
 }
 
 // PublishRequest 发布请求
@@ -55,6 +64,7 @@ type LoginQrcodeResponse struct {
 	Timeout    string `json:"timeout"`
 	IsLoggedIn bool   `json:"is_logged_in"`
 	Img        string `json:"img,omitempty"`
+	Stage      string `json:"stage,omitempty"`
 }
 
 // PublishResponse 发布响应
@@ -129,6 +139,29 @@ func (s *XiaohongshuService) CheckLoginStatus(ctx context.Context) (*LoginStatus
 
 // GetLoginQrcode 获取登录的扫码二维码
 func (s *XiaohongshuService) GetLoginQrcode(ctx context.Context) (*LoginQrcodeResponse, error) {
+	if s.loginManager == nil {
+		return s.getLoginQrcodeLegacy(ctx)
+	}
+
+	result, err := s.loginManager.GetQRCode(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	img := result.Img
+	if img != "" && !strings.HasPrefix(img, "data:image/png;base64,") {
+		img = "data:image/png;base64," + img
+	}
+
+	return &LoginQrcodeResponse{
+		Timeout:    result.Timeout,
+		Img:        img,
+		IsLoggedIn: result.IsLoggedIn,
+		Stage:      result.Stage,
+	}, nil
+}
+
+func (s *XiaohongshuService) getLoginQrcodeLegacy(ctx context.Context) (*LoginQrcodeResponse, error) {
 	b := newBrowser()
 	page := b.NewPage()
 
