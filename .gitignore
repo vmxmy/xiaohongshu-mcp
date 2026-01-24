@@ -68,6 +68,7 @@ cookies.json
 
 # Build output
 bin/
+dist/
 
 # Archived binaries
 .archived/*-darwin-*
