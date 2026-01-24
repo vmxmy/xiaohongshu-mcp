@@ -70,12 +70,5 @@ cookies.json
 bin/
 dist/
 
-# Archived binaries
-.archived/*-darwin-*
-.archived/*-linux-*
-.archived/*.tar.gz
-.archived/*.git
-.archived/xiaohongshu-mcp-*
-
 # Images (user generated)
 pic/
