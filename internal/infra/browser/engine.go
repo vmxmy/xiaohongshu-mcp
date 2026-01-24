@@ -7,6 +7,10 @@ type Page interface {
 	SetFiles(selector string, files []string) error
 	Text(selector string) (string, error)
 	WaitVisible(selector string) error
+	URL() string
+	IsVisible(selector string) (bool, error)
+	ScrollIntoView(selector string) error
+	ClickForce(selector string) error
 	Close() error
 }
 

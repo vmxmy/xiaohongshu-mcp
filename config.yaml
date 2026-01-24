@@ -1,0 +1,253 @@
+# 小红书 MCP 工具配置文件
+# 所有URL、CSS选择器、超时参数等配置集中管理
+# 当小红书页面更新时，只需修改此配置文件，无需改动代码
+
+# ============================================
+# URL 配置
+# ============================================
+urls:
+  # 主站URLs
+  main:
+    home: "https://www.xiaohongshu.com"
+    explore: "https://www.xiaohongshu.com/explore"
+    search: "https://www.xiaohongshu.com/search_result"
+
+  # 创作者中心URLs
+  creator:
+    base: "https://creator.xiaohongshu.com"
+    home: "https://creator.xiaohongshu.com/new/home?source=official"
+    # 发布页面 - 图文
+    publish_image: "https://creator.xiaohongshu.com/publish/publish?source=official&target=image"
+    # 发布页面 - 视频
+    publish_video: "https://creator.xiaohongshu.com/publish/publish?source=official&target=video"
+    # 数据分析
+    fan_analytics: "https://creator.xiaohongshu.com/statistics/fans-data?source=official"
+    content_analytics: "https://creator.xiaohongshu.com/statistics/data-analysis?source=official"
+
+  # Feed详情页模板 (使用 {feedID} 和 {xsecToken} 作为占位符)
+  feed_detail: "https://www.xiaohongshu.com/explore/{feedID}?xsec_token={xsecToken}&xsec_source=pc_feed"
+
+  # 用户主页模板
+  user_profile: "https://www.xiaohongshu.com/user/profile/{userID}?xsec_token={xsecToken}&xsec_source=pc_note"
+
+# ============================================
+# CSS 选择器配置 - 发布功能
+# ============================================
+selectors:
+  publish:
+    # 页面容器
+    upload_content: "div.upload-content"
+
+    # TAB切换
+    creator_tab: "div.creator-tab"
+
+    # 文件上传
+    upload_input: ".upload-input"
+    uploaded_images: ".img-preview-area .pr"
+
+    # 标题输入
+    title_input: "div.d-input input"
+    title_max_length: "div.title-container div.max_suffix"
+
+    # 内容输入
+    content_editor_ql: '[role="textbox"]'
+    content_editor_textbox: 'div[contenteditable="true"]'
+    content_placeholder: 'p[data-placeholder*="输入正文描述"]'
+    content_max_length: "div.edit-container div.length-error"
+
+    # 标签输入
+    topic_container: "#creator-editor-topic-container"
+    topic_item: ".item"
+
+    # 发布按钮 - 精确匹配"发布"按钮
+    submit_button: "button:has-text('发布')"
+
+    # 暂存按钮 - 精确匹配"暂存离开"按钮
+    save_draft_button: "button:has-text('暂存离开')"
+
+    # 定时发布
+    radio_label: "span.el-radio__label"
+    datetime_picker: 'input.el-input__inner[placeholder="选择日期和时间"]'
+    date_input: 'input.el-input__inner[placeholder="选择日期"]'
+    time_input: 'input.el-input__inner[placeholder="选择时间"]'
+    confirm_button: "button.el-picker-panel__link-btn"
+
+    # 弹窗
+    popover: "div.d-popover"
+
+    # 提示消息
+    error_message:
+      - ".el-message--error .el-message__content"
+      - ".d-message--error"
+      - ".error-message"
+      - 'div[class*="error"]'
+
+    success_message:
+      - ".el-message--success .el-message__content"
+      - ".d-message--success"
+      - ".success-message"
+
+# ============================================
+# 超时配置 (单位: 秒)
+# ============================================
+timeouts:
+  # 页面导航超时
+  navigate: 300
+
+  # 页面加载超时
+  page_load: 30
+
+  # 元素等待超时
+  element_wait: 30
+
+  # TAB查找超时
+  tab_search: 15
+
+  # 图片上传超时
+  image_upload: 60
+
+  # 发布结果等待
+  publish_result: 30
+
+  # API响应超时
+  api_response: 30
+
+# ============================================
+# 间隔配置 (单位: 毫秒)
+# ============================================
+intervals:
+  # 轮询检查间隔
+  check: 500
+
+  # TAB查找重试间隔
+  tab_retry: 200
+
+  # 标签输入延迟
+  tag_input_char: 50
+  tag_input_wait: 200
+  tag_select_wait: 500
+
+  # 内容输入延迟
+  arrow_down: 10
+
+# ============================================
+# 限制配置
+# ============================================
+limits:
+  # 标签数量限制
+  max_tags: 10
+
+  # 标题长度限制 (单位宽度)
+  max_title_width: 40
+
+  # 图片数量限制
+  max_images: 9
+  min_images: 1
+
+  # 图片大小限制 (MB)
+  max_image_size: 32
+
+  # 视频大小限制 (GB)
+  max_video_size: 20
+
+# ============================================
+# API 拦截配置
+# ============================================
+api:
+  # 需要拦截的API路径模式
+  intercept_patterns:
+    - "*/web_api/sns/v2/note*"
+    - "*/web_api/sns/v1/note*"
+    - "*publish*"
+
+  # 成功响应标识
+  success_indicators:
+    - field: "success"
+      value: true
+    - field: "code"
+      value: 0
+
+# ============================================
+# 定时发布配置
+# ============================================
+schedule:
+  # 最小提前时间 (小时)
+  min_hours: 1
+
+  # 最大提前时间 (天)
+  max_days: 14
+
+# ============================================
+# 搜索配置
+# ============================================
+search:
+  filters:
+    # 排序选项
+    sort_by:
+      default: "综合"
+      options:
+        - "综合"
+        - "最新"
+        - "最多点赞"
+        - "最多评论"
+        - "最多收藏"
+
+    # 笔记类型
+    note_type:
+      default: "不限"
+      options:
+        - "不限"
+        - "视频"
+        - "图文"
+
+    # 发布时间
+    publish_time:
+      default: "不限"
+      options:
+        - "不限"
+        - "一天内"
+        - "一周内"
+        - "半年内"
+
+    # 搜索范围
+    search_scope:
+      default: "不限"
+      options:
+        - "不限"
+        - "已看过"
+        - "未看过"
+        - "已关注"
+
+    # 位置距离
+    location:
+      default: "不限"
+      options:
+        - "不限"
+        - "同城"
+        - "附近"
+
+# ============================================
+# 日志配置
+# ============================================
+logging:
+  # 是否启用调试日志
+  debug: false
+
+  # 日志级别
+  level: "info"
+
+  # 是否记录选择器查找失败
+  log_selector_failures: true
+
+# ============================================
+# 重试配置
+# ============================================
+retry:
+  # 最大重试次数
+  max_attempts: 3
+
+  # 重试间隔 (秒)
+  interval: 2
+
+  # 是否启用指数退避
+  exponential_backoff: true

@@ -6,3 +6,7 @@ limits:
   max_tags: 10
   min_images: 1
   max_images: 9
+timeouts:
+  navigate: 120
+  element_wait: 10
+  image_upload: 60

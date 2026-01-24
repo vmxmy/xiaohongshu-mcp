@@ -11,11 +11,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sirupsen/logrus"
+	apppublish "github.com/xpzouying/xiaohongshu-mcp/internal/app/publish"
 )
 
 // AppServer 应用服务器结构体，封装所有服务和处理器
 type AppServer struct {
 	xiaohongshuService *XiaohongshuService
+	publishUsecase     *apppublish.Usecase
 	mcpServer          *mcp.Server
 	router             *gin.Engine
 	httpServer         *http.Server
@@ -25,6 +27,19 @@ type AppServer struct {
 func NewAppServer(xiaohongshuService *XiaohongshuService) *AppServer {
 	appServer := &AppServer{
 		xiaohongshuService: xiaohongshuService,
+	}
+
+	// 初始化 MCP Server（需要在创建 appServer 之后，因为工具注册需要访问 appServer）
+	appServer.mcpServer = InitMCPServer(appServer)
+
+	return appServer
+}
+
+// NewAppServerWithPublish 创建带发布功能的应用服务器实例
+func NewAppServerWithPublish(xiaohongshuService *XiaohongshuService, publishUsecase *apppublish.Usecase) *AppServer {
+	appServer := &AppServer{
+		xiaohongshuService: xiaohongshuService,
+		publishUsecase:     publishUsecase,
 	}
 
 	// 初始化 MCP Server（需要在创建 appServer 之后，因为工具注册需要访问 appServer）

@@ -17,11 +17,11 @@ func boolPtr(b bool) *bool { return &b }
 
 // PublishContentArgs 发布内容的参数
 type PublishContentArgs struct {
-	Title      string   `json:"title" jsonschema:"内容标题（小红书限制：最多20个中文字或英文单词）"`
-	Content    string   `json:"content" jsonschema:"正文内容，不包含以#开头的标签内容，所有话题标签都用tags参数来生成和提供即可"`
-	Images     []string `json:"images" jsonschema:"图片路径列表（至少需要1张图片）。支持两种方式：1. HTTP/HTTPS图片链接（自动下载）；2. 本地图片绝对路径（推荐，如:/Users/user/image.jpg）"`
-	Tags       []string `json:"tags,omitempty" jsonschema:"话题标签列表（可选参数），如 [美食, 旅行, 生活]"`
-	ScheduleAt string   `json:"schedule_at,omitempty" jsonschema:"定时发布时间（可选），ISO8601格式如 2024-01-20T10:30:00+08:00，支持1小时至14天内。不填则立即发布"`
+	Title      string   `json:"title" jsonschema_description:"内容标题（小红书限制：最多20个中文字或英文单词）"`
+	Content    string   `json:"content" jsonschema_description:"正文内容，不包含以#开头的标签内容，所有话题标签都用tags参数来生成和提供即可"`
+	Images     []string `json:"images" jsonschema_description:"图片路径列表（至少需要1张图片）。支持两种方式：1. HTTP/HTTPS图片链接（自动下载）；2. 本地图片绝对路径（推荐，如:/Users/user/image.jpg）"`
+	Tags       []string `json:"tags,omitempty" jsonschema_description:"话题标签列表（可选参数），如 [美食, 旅行, 生活]"`
+	ScheduleAt string   `json:"schedule_at,omitempty" jsonschema_description:"定时发布时间（可选��，ISO8601格式如 2024-01-20T10:30:00+08:00，支持1小时至14天内。不填则立即发布"`
 }
 
 // PublishVideoArgs 发布视频的参数（仅支持本地单个视频文件）
@@ -31,6 +31,22 @@ type PublishVideoArgs struct {
 	Video      string   `json:"video" jsonschema:"本地视频绝对路径（仅支持单个视频文件，如:/Users/user/video.mp4）"`
 	Tags       []string `json:"tags,omitempty" jsonschema:"话题标签列表（可选参数），如 [美食, 旅行, 生活]"`
 	ScheduleAt string   `json:"schedule_at,omitempty" jsonschema:"定时发布时间（可选），ISO8601格式如 2024-01-20T10:30:00+08:00，支持1小时至14天内。不填则立即发布"`
+}
+
+// SaveDraftArgs 保存图文草稿的参数
+type SaveDraftArgs struct {
+	Title   string   `json:"title" jsonschema:"内容标题（小红书限制：最多20个中文字或英文单词）"`
+	Content string   `json:"content" jsonschema:"正文内容，不包含以#开头的标签内容，所有话题标签都用tags参数来生成和提供即可"`
+	Images  []string `json:"images" jsonschema:"图片路径列表（至少需要1张图片）。支持两种方式：1. HTTP/HTTPS图片链接（自动下载）；2. 本地图片绝对路径（推荐，如:/Users/user/image.jpg）"`
+	Tags    []string `json:"tags,omitempty" jsonschema:"话题标签列表（可选参数），如 [美食, 旅行, 生活]"`
+}
+
+// SaveVideoDraftArgs 保存视频草稿的参数
+type SaveVideoDraftArgs struct {
+	Title   string   `json:"title" jsonschema:"内容标题（小红书限制：最多20个中文字或英文单词）"`
+	Content string   `json:"content" jsonschema:"正文内容，不包含以#开头的标签内容，所有话题标签都用tags参数来生成和提供即可"`
+	Video   string   `json:"video" jsonschema:"本地视频绝对路径（仅支持单个视频文件，如:/Users/user/video.mp4）"`
+	Tags    []string `json:"tags,omitempty" jsonschema:"话题标签列表（可选参数），如 [美食, 旅行, 生活]"`
 }
 
 // SyncCookiesArgs 上传 cookies 参数
@@ -462,6 +478,50 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				"schedule_at": args.ScheduleAt,
 			}
 			result := appServer.handlePublishVideo(ctx, argsMap)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	// 工具 11.5: 保存图文草稿
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "save_draft",
+			Description: "保存小红书图文草稿（暂存离开，不立即发布）",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "Save Draft",
+				DestructiveHint: boolPtr(false),
+			},
+		},
+		withPanicRecovery("save_draft", func(ctx context.Context, req *mcp.CallToolRequest, args SaveDraftArgs) (*mcp.CallToolResult, any, error) {
+			argsMap := map[string]interface{}{
+				"title":   args.Title,
+				"content": args.Content,
+				"images":  convertStringsToInterfaces(args.Images),
+				"tags":    convertStringsToInterfaces(args.Tags),
+			}
+			result := appServer.handleSaveDraft(ctx, argsMap)
+			return convertToMCPResult(result), nil, nil
+		}),
+	)
+
+	// 工具 11.6: 保存视频草稿
+	mcp.AddTool(server,
+		&mcp.Tool{
+			Name:        "save_video_draft",
+			Description: "保存小红书视频草稿（暂存离开，不立即发布）",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "Save Video Draft",
+				DestructiveHint: boolPtr(false),
+			},
+		},
+		withPanicRecovery("save_video_draft", func(ctx context.Context, req *mcp.CallToolRequest, args SaveVideoDraftArgs) (*mcp.CallToolResult, any, error) {
+			argsMap := map[string]interface{}{
+				"title":   args.Title,
+				"content": args.Content,
+				"video":   args.Video,
+				"tags":    convertStringsToInterfaces(args.Tags),
+			}
+			result := appServer.handleSaveVideoDraft(ctx, argsMap)
 			return convertToMCPResult(result), nil, nil
 		}),
 	)

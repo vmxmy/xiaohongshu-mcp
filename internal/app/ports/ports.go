@@ -9,6 +9,8 @@ import (
 type PublishGateway interface {
 	PublishImage(ctx context.Context, content publish.ImageContent) error
 	PublishVideo(ctx context.Context, content publish.VideoContent) error
+	SaveImageDraft(ctx context.Context, content publish.ImageContent) error
+	SaveVideoDraft(ctx context.Context, content publish.VideoContent) error
 }
 
 type SelectorStore interface {

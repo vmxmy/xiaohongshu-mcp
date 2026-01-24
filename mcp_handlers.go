@@ -12,6 +12,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/xiaohongshu-mcp/cookies"
+	domainpublish "github.com/xpzouying/xiaohongshu-mcp/internal/domain/publish"
 	"github.com/xpzouying/xiaohongshu-mcp/xiaohongshu"
 )
 
@@ -179,6 +180,7 @@ func (s *AppServer) handleDeleteCookies(ctx context.Context) *MCPToolResult {
 // handlePublishContent 处理发布内容
 func (s *AppServer) handlePublishContent(ctx context.Context, args map[string]interface{}) *MCPToolResult {
 	logrus.Info("MCP: 发布内容")
+	logrus.Debugf("MCP: 原始参数 - %+v", args)
 
 	// 解析参数
 	title, _ := args["title"].(string)
@@ -186,6 +188,28 @@ func (s *AppServer) handlePublishContent(ctx context.Context, args map[string]in
 	imagePathsInterface, _ := args["images"].([]interface{})
 	tagsInterface, _ := args["tags"].([]interface{})
 
+	// 验证必需参数
+	if title == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "发布失败: 标题不能为空",
+			}},
+			IsError: true,
+		}
+	}
+
+	if content == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "发布失败: 内容不能为空",
+			}},
+			IsError: true,
+		}
+	}
+
+	// 解析图片路径
 	var imagePaths []string
 	for _, path := range imagePathsInterface {
 		if pathStr, ok := path.(string); ok {
@@ -193,6 +217,19 @@ func (s *AppServer) handlePublishContent(ctx context.Context, args map[string]in
 		}
 	}
 
+	// 验证图片
+	if len(imagePaths) == 0 {
+		logrus.Errorf("MCP: 图片参数错误 - 原始类型: %T, 值: %v", args["images"], args["images"])
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "发布失败: 至少需要1张图片。请确保 images 参数是字符串数组格式，如: [\"图片路径1\", \"图片路径2\"]",
+			}},
+			IsError: true,
+		}
+	}
+
+	// 解析标签
 	var tags []string
 	for _, tag := range tagsInterface {
 		if tagStr, ok := tag.(string); ok {
@@ -204,6 +241,7 @@ func (s *AppServer) handlePublishContent(ctx context.Context, args map[string]in
 	scheduleAt, _ := args["schedule_at"].(string)
 
 	logrus.Infof("MCP: 发布内容 - 标题: %s, 图片数量: %d, 标签数量: %d, 定时: %s", title, len(imagePaths), len(tags), scheduleAt)
+	logrus.Debugf("MCP: 图片路径 - %v", imagePaths)
 
 	// 构建发布请求
 	req := &PublishRequest{
@@ -292,6 +330,132 @@ func (s *AppServer) handlePublishVideo(ctx context.Context, args map[string]inte
 		Content: []MCPContent{{
 			Type: "text",
 			Text: resultText,
+		}},
+	}
+}
+
+// handleSaveDraft 处理保存草稿
+func (s *AppServer) handleSaveDraft(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	logrus.Info("MCP: 保存草稿")
+
+	// 解析参数
+	title, _ := args["title"].(string)
+	content, _ := args["content"].(string)
+	imagePathsInterface, _ := args["images"].([]interface{})
+	tagsInterface, _ := args["tags"].([]interface{})
+
+	var imagePaths []string
+	for _, path := range imagePathsInterface {
+		if pathStr, ok := path.(string); ok {
+			imagePaths = append(imagePaths, pathStr)
+		}
+	}
+
+	var tags []string
+	for _, tag := range tagsInterface {
+		if tagStr, ok := tag.(string); ok {
+			tags = append(tags, tagStr)
+		}
+	}
+
+	logrus.Infof("MCP: 保存草稿 - 标题: %s, 图片数量: %d, 标签数量: %d", title, len(imagePaths), len(tags))
+
+	// 调用保存草稿服务
+	if s.publishUsecase == nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "保存草稿失败: 发布服务未初始化",
+			}},
+			IsError: true,
+		}
+	}
+
+	publishContent := domainpublish.ImageContent{
+		Title:      title,
+		Content:    content,
+		Tags:       tags,
+		ImagePaths: imagePaths,
+	}
+
+	if err := s.publishUsecase.SaveImageDraft(ctx, publishContent); err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "保存草稿失败: " + err.Error(),
+			}},
+			IsError: true,
+		}
+	}
+
+	return &MCPToolResult{
+		Content: []MCPContent{{
+			Type: "text",
+			Text: "草稿保存成功",
+		}},
+	}
+}
+
+// handleSaveVideoDraft 处理保存视频草稿
+func (s *AppServer) handleSaveVideoDraft(ctx context.Context, args map[string]interface{}) *MCPToolResult {
+	logrus.Info("MCP: 保存视频草稿")
+
+	title, _ := args["title"].(string)
+	content, _ := args["content"].(string)
+	videoPath, _ := args["video"].(string)
+	tagsInterface, _ := args["tags"].([]interface{})
+
+	var tags []string
+	for _, tag := range tagsInterface {
+		if tagStr, ok := tag.(string); ok {
+			tags = append(tags, tagStr)
+		}
+	}
+
+	if videoPath == "" {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "保存草稿失败: 缺少本地视频文件路径",
+			}},
+			IsError: true,
+		}
+	}
+
+	logrus.Infof("MCP: 保存视频草稿 - 标题: %s, 标签数量: %d", title, len(tags))
+
+	// 调用保存视频草稿服务
+	if s.publishUsecase == nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "保存草稿失败: 发布服务未初始化",
+			}},
+			IsError: true,
+		}
+	}
+
+	publishContent := domainpublish.VideoContent{
+		Title:     title,
+		Content:   content,
+		Tags:      tags,
+		VideoPath: videoPath,
+	}
+
+	if err := s.publishUsecase.SaveVideoDraft(ctx, publishContent); err != nil {
+		return &MCPToolResult{
+			Content: []MCPContent{{
+				Type: "text",
+				Text: "保存视频草稿失败: " + err.Error(),
+			}},
+			IsError: true,
+		}
+	}
+
+	return &MCPToolResult{
+		Content: []MCPContent{{
+			Type: "text",
+			Text: "视频草稿保存成功",
 		}},
 	}
 }

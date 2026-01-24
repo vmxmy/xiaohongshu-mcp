@@ -18,6 +18,11 @@ type Config struct {
 		MinImages int `yaml:"min_images"`
 		MaxImages int `yaml:"max_images"`
 	} `yaml:"limits"`
+	Timeouts struct {
+		Navigate    int `yaml:"navigate"`
+		ElementWait int `yaml:"element_wait"`
+		ImageUpload int `yaml:"image_upload"`
+	} `yaml:"timeouts"`
 }
 
 func LoadFromFile(path string) (*Config, error) {

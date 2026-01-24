@@ -36,9 +36,25 @@ go.work.sum
 
 # Build artifacts
 xiaohongshu-mcp
+xhs-mcp
 
 # Test scripts
 test_*.sh
+start_debug*.sh
+debug_*.sh
+prepare_test.sh
+check_*.sh
+*_test_*.go
+
+# Test data
+test_images/
+test_publish.json
+test_publish_browser.js
+commenters_to_follow.json
+
+# Backup and trash
+.merge-backup-*/
+.trash/
 
 # Cookies files (contain sensitive login information)
 cookies.json

@@ -48,7 +48,7 @@ func main() {
 	xiaohongshuService := NewXiaohongshuServiceWithUsecase(publishUsecase)
 
 	// 创建并启动应用服务器
-	appServer := NewAppServer(xiaohongshuService)
+	appServer := NewAppServerWithPublish(xiaohongshuService, publishUsecase)
 	if err := appServer.Start(port); err != nil {
 		logrus.Fatalf("failed to run server: %v", err)
 	}
