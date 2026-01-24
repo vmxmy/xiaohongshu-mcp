@@ -419,13 +419,13 @@ npx @modelcontextprotocol/inspector
 
 ### 检查登录状态
 
-![检查登录状态](./assets/check_login.gif)
+![检查登录状态](./assets/check_login.mp4)
 
 ### 发布图文
 
 示例中是从 https://unsplash.com/ 中随机找了个图片做测试。
 
-![发布图文](./assets/inspect_mcp_publish.gif)
+![发布图文](./assets/inspect_mcp_publish.mp4)
 
 ### 搜索内容
 
@@ -733,7 +733,7 @@ Cline 是一个强大的 AI 编程助手，支持 MCP 协议集成。
 使用 xiaohongshu-mcp 的视频发布功能。
 ```
 
-![claude-cli 进行发布](./assets/claude_push.gif)
+![claude-cli 进行发布](./assets/claude_push.mp4)
 
 **发布结果：**
 

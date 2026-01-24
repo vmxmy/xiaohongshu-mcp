@@ -420,13 +420,13 @@ After configuring MCP inspector as above, click the `List Tools` button to view 
 
 ### Check Login Status
 
-![Check Login Status](./assets/check_login.gif)
+![Check Login Status](./assets/check_login.mp4)
 
 ### Publish Image-Text
 
 The example uses a random image from https://unsplash.com/ for testing.
 
-![Publish Image-Text](./assets/inspect_mcp_publish.gif)
+![Publish Image-Text](./assets/inspect_mcp_publish.mp4)
 
 ### Search Content
 
@@ -728,7 +728,7 @@ using this local video file:
 Use xiaohongshu-mcp's video publishing feature.
 ```
 
-![claude-cli publishing](./assets/claude_push.gif)
+![claude-cli publishing](./assets/claude_push.mp4)
 
 **Publishing Result:**
 
