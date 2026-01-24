@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -77,17 +78,19 @@ type ContentAnalytics struct {
 
 // NoteMetrics 笔记指标
 type NoteMetrics struct {
-	Title          string  `json:"title"`           // 标题
-	PublishTime    string  `json:"publish_time"`    // 发布时间
-	Exposure       int     `json:"exposure"`        // 曝光数
-	Views          int     `json:"views"`           // 观看数
-	ClickRate      float64 `json:"click_rate"`      // 点击率
-	Likes          int     `json:"likes"`           // 点赞数
-	Comments       int     `json:"comments"`        // 评论数
-	Collects       int     `json:"collects"`        // 收藏数
-	Shares         int     `json:"shares"`          // 分享数
-	FollowerGrowth int     `json:"follower_growth"` // 涨粉数
-	Status         string  `json:"status"`          // 状态
+	Title           string  `json:"title"`             // 标题
+	PublishTime     string  `json:"publish_time"`      // 发布时间
+	Exposure        int     `json:"exposure"`          // 曝光数
+	Views           int     `json:"views"`             // 观看数
+	ClickRate       float64 `json:"click_rate"`        // 点击率
+	Likes           int     `json:"likes"`             // 点赞数
+	Comments        int     `json:"comments"`          // 评论数
+	Collects        int     `json:"collects"`          // 收藏数
+	FollowerGrowth  int     `json:"follower_growth"`   // 涨粉数
+	Shares          int     `json:"shares"`            // 分享数
+	AvgViewDuration string  `json:"avg_view_duration"` // 人均观看时长
+	FullScreen      int     `json:"full_screen"`       // 满屏
+	Status          string  `json:"status"`            // 状态
 }
 
 // FollowerUser 粉丝/关注用户信息
@@ -428,57 +431,185 @@ func (d *DataAction) GetFanAnalytics(ctx context.Context, period string) (*FanAn
 func (d *DataAction) GetContentAnalytics(ctx context.Context, limit int) (*ContentAnalytics, error) {
 	page := d.page.Context(ctx).Timeout(5 * time.Minute)
 
-	// 导航到内容分析页面
-	logrus.Info("导航到内容分析页面...")
+	// 导航到数据分析页面
+	logrus.Info("导航到数据分析页面...")
 	url := "https://creator.xiaohongshu.com/statistics/data-analysis?source=official"
+
+	// 设置请求拦截，捕获API响应
+	capturedData := make(map[string]map[string]interface{}) // 用map去重，key为note id
+	var captureMutex sync.Mutex
+
+	router := page.HijackRequests()
+	router.MustAdd("*/api/galaxy/creator/datacenter/note/analyze/list*", func(ctx *rod.Hijack) {
+		// 记录请求URL（调试用）
+		logrus.Debugf("拦截到请求: %s", ctx.Request.URL().String())
+
+		// 让请求正常发出
+		ctx.MustLoadResponse()
+
+		// 记录响应状态
+		statusCode := ctx.Response.Payload().ResponseCode
+		logrus.Debugf("响应状态: %d", statusCode)
+
+		// 如果响应成功，解析数据
+		if statusCode == 200 {
+			body := ctx.Response.Body()
+
+			var apiResp struct {
+				Success bool `json:"success"`
+				Data    struct {
+					NoteInfos []map[string]interface{} `json:"note_infos"`
+					Total     int                      `json:"total"`
+				} `json:"data"`
+			}
+
+			if err := json.Unmarshal([]byte(body), &apiResp); err == nil && apiResp.Success {
+				captureMutex.Lock()
+				for _, note := range apiResp.Data.NoteInfos {
+					// 使用note id去重
+					if id, ok := note["id"].(string); ok {
+						capturedData[id] = note
+					}
+				}
+				logrus.Infof("已捕获 %d 条笔记数据（去重后共 %d 条，总共 %d 条）", len(apiResp.Data.NoteInfos), len(capturedData), apiResp.Data.Total)
+				captureMutex.Unlock()
+			}
+		} else {
+			logrus.Warnf("API请求失败，状态码: %d", statusCode)
+		}
+	})
+	go router.Run()
+	defer router.MustStop()
+
 	page.MustNavigate(url)
 	page.MustWaitDOMStable()
-	time.Sleep(5 * time.Second)
 
-	// 提取笔记数据
-	result := page.MustEval(`(limit) => {
-		const notes = [];
-		const rows = document.querySelectorAll('tr, .note-row, [class*="note"]');
+	// 等待初始API请求完成
+	time.Sleep(3 * time.Second)
 
-		rows.forEach(row => {
-			const text = row.textContent;
-			
-			// 匹配笔记标题和发布时间
-			const titleMatch = text.match(/💥(.+?)发布于(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})/);
-			if (!titleMatch) return;
+	logrus.Infof("初始加载完成，已捕获 %d 条笔记", len(capturedData))
 
-			const title = '💥' + titleMatch[1].trim();
-			const publishTime = titleMatch[2];
+	// 如果需要更多数据，触发翻页
+	for len(capturedData) < limit {
+		// 计算还需要多少条
+		needed := limit - len(capturedData)
+		if needed <= 0 {
+			break
+		}
 
-			// 提取数字数据
-			const numbers = text.match(/\d+/g) || [];
-			if (numbers.length < 8) return;
+		logrus.Infof("需要更多数据（当前 %d 条，目标 %d 条），尝试点击下一页", len(capturedData), limit)
 
-			notes.push({
-				title: title,
-				publish_time: publishTime,
-				exposure: parseInt(numbers[2]) || 0,
-				views: parseInt(numbers[3]) || 0,
-				click_rate: parseFloat(numbers[4]) || 0,
-				likes: parseInt(numbers[5]) || 0,
-				comments: parseInt(numbers[6]) || 0,
-				collects: parseInt(numbers[7]) || 0,
-				shares: parseInt(numbers[8]) || 0,
-				follower_growth: parseInt(numbers[9]) || 0,
-				status: text.includes('违规') ? 'violation' : 'normal'
-			});
+		// 查找分页容器中的所有按钮
+		pageButtons := page.MustElements(".pagination .d-pagination-page")
+		if len(pageButtons) == 0 {
+			logrus.Info("没有找到分页按钮")
+			break
+		}
 
-			if (notes.length >= limit) return;
-		});
+		// 最后一个按钮是"下一页"
+		nextButton := pageButtons[len(pageButtons)-1]
 
-		return JSON.stringify({notes: notes.slice(0, limit)});
-	}`, limit).String()
+		// 检查是否被禁用
+		classes := nextButton.MustProperty("className").String()
+		if contains(classes, "disabled") {
+			logrus.Info("下一页按钮已禁用，已到达数据末尾")
+			break
+		}
 
-	var analytics ContentAnalytics
-	if err := json.Unmarshal([]byte(result), &analytics); err != nil {
-		return nil, fmt.Errorf("解析内容分析数据失败: %w", err)
+		// 记录点击前的数据量
+		beforeCount := len(capturedData)
+
+		// 点击下一页
+		logrus.Info("点击下一页按钮...")
+		nextButton.MustClick()
+
+		// 等待API请求完成
+		time.Sleep(2 * time.Second)
+
+		// 如果捕获的数据没有增加，说明已经到底了
+		if len(capturedData) == beforeCount {
+			logrus.Info("数据未增加，停止翻页")
+			break
+		}
 	}
 
-	logrus.Infof("获取内容分析数据成功，共 %d 条笔记", len(analytics.Notes))
-	return &analytics, nil
+	logrus.Infof("数据获取完成，共 %d 条笔记", len(capturedData))
+
+	// 转换为我们的数据格式
+	var notes []NoteMetrics
+	for _, noteData := range capturedData {
+		if len(notes) >= limit {
+			break
+		}
+		note := convertNoteData(noteData)
+		notes = append(notes, note)
+	}
+
+	logrus.Infof("获取内容分析数据成功，共 %d 条笔记", len(notes))
+	return &ContentAnalytics{Notes: notes}, nil
+}
+
+// convertNoteData 将API返回的笔记数据转换为NoteMetrics格式
+func convertNoteData(data map[string]interface{}) NoteMetrics {
+	// 安全地获取各个字段
+	getInt := func(key string) int {
+		if v, ok := data[key].(float64); ok {
+			return int(v)
+		}
+		return 0
+	}
+
+	getFloat := func(key string) float64 {
+		if v, ok := data[key].(float64); ok {
+			return v
+		}
+		return 0
+	}
+
+	getString := func(key string) string {
+		if v, ok := data[key].(string); ok {
+			return v
+		}
+		return ""
+	}
+
+	// 转换发布时间
+	var publishTime string
+	if postTime, ok := data["post_time"].(float64); ok {
+		t := time.Unix(int64(postTime/1000), 0)
+		publishTime = t.Format("2006-01-02 15:04")
+	}
+
+	// 转换人均观看时长
+	avgDuration := ""
+	if viewTimeAvg := getInt("view_time_avg"); viewTimeAvg > 0 {
+		avgDuration = fmt.Sprintf("%ds", viewTimeAvg)
+	}
+
+	// 转换点击率为百分比
+	clickRate := getFloat("coverClickRate") * 100
+
+	return NoteMetrics{
+		Title:           getString("title"),
+		PublishTime:     publishTime,
+		Exposure:        getInt("imp_count"),
+		Views:           getInt("read_count"),
+		ClickRate:       clickRate,
+		Likes:           getInt("like_count"),
+		Comments:        getInt("comment_count"),
+		Collects:        getInt("fav_count"),
+		FollowerGrowth:  getInt("increase_fans_count"),
+		Shares:          getInt("share_count"),
+		AvgViewDuration: avgDuration,
+		FullScreen:      getInt("danmaku_count"),
+		Status:          "normal", // 默认正常状态
+	}
+}
+
+// truncate 截断字符串到指定长度
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
