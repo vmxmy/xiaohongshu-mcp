@@ -56,7 +56,7 @@ echo ""
 
 # 获取最新版本
 echo "🔍 检查最新版本..."
-LATEST_VERSION=$(gh release list --repo $REPO --limit 1 | awk '{print $1}')
+LATEST_VERSION=$(gh release list --repo $REPO --limit 1 | awk '{print $3}')
 
 if [ -z "$LATEST_VERSION" ]; then
     echo "❌ 无法获取最新版本，请确保已登录 gh CLI"

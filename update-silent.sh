@@ -55,7 +55,7 @@ fi
 log "系统: $OS_TYPE, 架构: $ARCH_TYPE, 平台: $PLATFORM"
 
 # 获取最新版本
-LATEST_VERSION=$(gh release list --repo $REPO --limit 1 2>/dev/null | awk '{print $1}')
+LATEST_VERSION=$(gh release list --repo $REPO --limit 1 2>/dev/null | awk '{print $3}')
 if [ -z "$LATEST_VERSION" ]; then
     log "ERROR: 无法获取最新版本"
     exit 1

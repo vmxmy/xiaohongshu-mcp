@@ -108,7 +108,7 @@ echo ""
 # ========================================
 log_info "步骤 3/7: 检查最新版本"
 
-LATEST_VERSION=$(gh release list --repo $REPO --limit 1 | awk '{print $1}')
+LATEST_VERSION=$(gh release list --repo $REPO --limit 1 | awk '{print $3}')
 if [ -z "$LATEST_VERSION" ]; then
     log_error "无法获取最新版本"
     exit 1
