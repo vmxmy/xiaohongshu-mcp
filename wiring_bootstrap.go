@@ -10,7 +10,7 @@ import (
 
 	"github.com/xpzouying/xiaohongshu-mcp/cookies"
 	apppublish "github.com/xpzouying/xiaohongshu-mcp/internal/app/publish"
-	"github.com/xpzouying/xiaohongshu-mcp/internal/infra/browser/playwright"
+	browserrod "github.com/xpzouying/xiaohongshu-mcp/internal/infra/browser/rod"
 	infraconfig "github.com/xpzouying/xiaohongshu-mcp/internal/infra/config"
 	"github.com/xpzouying/xiaohongshu-mcp/internal/interfaces/wiring"
 )
@@ -19,7 +19,7 @@ func buildPublishUsecase(cfg *infraconfig.Config, selectors map[string]string, h
 	if cfg == nil {
 		return nil, errors.New("config missing")
 	}
-	engineCfg := playwright.DefaultConfig()
+	engineCfg := browserrod.DefaultConfig()
 	engineCfg.Headless = headless
 	engineCfg.CookiePath = cookies.GetCookiesFilePath()
 	if cfg.Timeouts.Navigate > 0 {
@@ -34,7 +34,7 @@ func buildPublishUsecase(cfg *infraconfig.Config, selectors map[string]string, h
 			engineCfg.ActionTimeout = uploadTimeout
 		}
 	}
-	engine := playwright.New(engineCfg)
+	engine := browserrod.New(engineCfg)
 	return wiring.BuildPublishUsecase(cfg, selectors, engine)
 }
 
