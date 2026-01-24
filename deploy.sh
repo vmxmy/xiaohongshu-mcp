@@ -5,17 +5,19 @@ echo "=== 小红书MCP服务器部署脚本 ==="
 
 # 配置变量
 DEPLOY_DIR="/opt/xiaohongshu-mcp"
-VERSION="v2026.01.24.2135-64dc373"
+VERSION="v2026.01.25.0417-798e9c2"
 GITHUB_REPO="vmxmy/xiaohongshu-mcp"
 
 # 1. 安装依赖
-echo "步骤1: 安装依赖..."
+echo "步骤1: 安装系统依赖..."
 if command -v apt &> /dev/null; then
     sudo apt update
-    sudo apt install -y chromium-browser curl wget
+    sudo apt install -y curl wget
 elif command -v yum &> /dev/null; then
-    sudo yum install -y chromium curl wget
+    sudo yum install -y curl wget
 fi
+
+echo "注意: Playwright 会在首次运行时自动下载浏览器（约150MB）"
 
 # 2. 安装PM2
 echo "步骤2: 安装PM2..."
