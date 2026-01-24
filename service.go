@@ -817,13 +817,13 @@ func (s *XiaohongshuService) GetFanAnalytics(ctx context.Context, period string)
 }
 
 // GetContentAnalytics 获取内容分析数据
-func (s *XiaohongshuService) GetContentAnalytics(ctx context.Context, limit int) (*xiaohongshu.ContentAnalytics, error) {
+func (s *XiaohongshuService) GetContentAnalytics(ctx context.Context, limit int, sortBy xiaohongshu.SortField, sortOrder xiaohongshu.SortOrder) (*xiaohongshu.ContentAnalytics, error) {
 	var analytics *xiaohongshu.ContentAnalytics
 	var err error
 
 	err = withBrowserPage(func(page browser.Page) error {
 		action := xiaohongshu.NewDataAction(page)
-		analytics, err = action.GetContentAnalytics(ctx, limit)
+		analytics, err = action.GetContentAnalytics(ctx, limit, sortBy, sortOrder)
 		return err
 	})
 

@@ -459,32 +459,262 @@ func (d *DataAction) GetFanAnalytics(ctx context.Context, period string) (*FanAn
 	return &analytics, nil
 }
 
-// GetContentAnalytics 获取内容分析数据
-func (d *DataAction) GetContentAnalytics(ctx context.Context, limit int) (*ContentAnalytics, error) {
+// SortField 可排序的字段
+type SortField string
+
+const (
+	SortByExposure       SortField = "exposure"        // 曝光
+	SortByViews          SortField = "views"           // 观看
+	SortByClickRate      SortField = "click_rate"      // 封面点击率
+	SortByLikes          SortField = "likes"           // 点赞
+	SortByComments       SortField = "comments"        // 评论
+	SortByCollects       SortField = "collects"        // 收藏
+	SortByFollowerGrowth SortField = "follower_growth" // 涨粉
+	SortByShares         SortField = "shares"          // 分享
+	SortByDuration       SortField = "duration"        // 人均观看时长
+	SortByBarrage        SortField = "barrage"         // 弹幕
+)
+
+// SortOrder 排序方向
+type SortOrder string
+
+const (
+	SortAsc  SortOrder = "asc"  // 升序
+	SortDesc SortOrder = "desc" // 降序
+)
+
+// GetContentAnalytics 获取内容分析数据（支持翻页和排序）
+// sortBy: 排序字段，空字符串表示不排序
+// sortOrder: 排序方向，asc升序/desc降序
+func (d *DataAction) GetContentAnalytics(ctx context.Context, limit int, sortBy SortField, sortOrder SortOrder) (*ContentAnalytics, error) {
 	page := d.page.WithContext(ctx).WithTimeout(5 * time.Minute)
 
 	// 导航到数据分析页面
 	logrus.Info("导航到数据分析页面...")
 	url := "https://creator.xiaohongshu.com/statistics/data-analysis?source=official"
 
-	// TODO: Playwright 网络拦截功能待实现
-	// 暂时通过 UI 提取数据的方式实现
-
 	if err := page.Goto(url); err != nil {
 		return nil, fmt.Errorf("导航失败: %w", err)
 	}
-	if err := page.WaitDOMStable(time.Second, 0.1); err != nil {
-		logrus.Warn("等待 DOM 稳定出现问题", "error", err)
-	}
 
-	// 等待初始加载完成
+	// 等待表格加载
 	time.Sleep(3 * time.Second)
 
-	logrus.Info("初始加载完成，尝试通过UI提取数据")
+	// 如果指定了排序字段，先进行排序
+	if sortBy != "" {
+		if err := d.applySorting(page, sortBy, sortOrder); err != nil {
+			logrus.Warnf("应用排序失败: %v，继续使用默认顺序", err)
+		}
+	}
 
-	// 简化实现：直接返回空数据，等待后续实现网络拦截
-	logrus.Warn("GetContentAnalytics 功能需要网络拦截支持，暂未完全实现")
-	return &ContentAnalytics{Notes: []NoteMetrics{}}, nil
+	logrus.Info("从表格提取内容分析数据")
+
+	allNotes := []NoteMetrics{}
+	pageNum := 1
+	maxPages := 50 // 最多翻50页，避免无限循环
+
+	// JavaScript提取函数
+	extractJS := `() => {
+		const notes = [];
+		const table = document.querySelector('table');
+		if (!table) {
+			return JSON.stringify({notes: [], count: 0, error: '未找到表格'});
+		}
+
+		// 获取所有数据行（跳过表头）
+		const rows = table.querySelectorAll('tbody tr');
+
+		rows.forEach((row, index) => {
+			const cells = row.querySelectorAll('td');
+			if (cells.length < 11) return;
+
+			// 提取笔记标题和基本信息
+			const firstCell = cells[0];
+			const titleElem = firstCell.querySelector('.note-title');
+			const timeElem = firstCell.querySelector('.time');
+
+			const title = titleElem ? titleElem.textContent.trim() : '';
+			const publishTime = timeElem ? timeElem.textContent.trim() : '';
+
+			// 提取数字数据
+			const getNumber = (cellIndex) => {
+				if (cellIndex >= cells.length) return 0;
+				const cell = cells[cellIndex];
+				const cellDiv = cell.querySelector('.d-table__cell');
+				const text = cellDiv ? cellDiv.textContent.trim() : cell.textContent.trim();
+				if (text === '-' || text === '' || text === '—') return 0;
+				const match = text.match(/[\d,]+/);
+				if (match) {
+					return parseInt(match[0].replace(/,/g, ''));
+				}
+				return 0;
+			};
+
+			const getRate = (cellIndex) => {
+				if (cellIndex >= cells.length) return 0;
+				const cell = cells[cellIndex];
+				const text = cell.textContent.trim();
+				const match = text.match(/([\d.]+)%%/);
+				return match ? parseFloat(match[1]) : 0;
+			};
+
+			const getDuration = (cellIndex) => {
+				if (cellIndex >= cells.length) return '';
+				const cell = cells[cellIndex];
+				const text = cell.textContent.trim();
+				return text !== '-' && text !== '' ? text : '';
+			};
+
+			notes.push({
+				title: title,
+				publish_time: publishTime,
+				exposure: getNumber(1),
+				views: getNumber(2),
+				click_rate: getRate(3),
+				likes: getNumber(4),
+				comments: getNumber(5),
+				collects: getNumber(6),
+				follower_growth: getNumber(7),
+				shares: getNumber(8),
+				avg_view_duration: getDuration(9),
+				full_screen: getNumber(10)
+			});
+		});
+
+		return JSON.stringify({notes: notes, count: notes.length});
+	}`
+
+	for pageNum <= maxPages && len(allNotes) < limit {
+		// 提取当前页数据
+		result, err := page.Eval(extractJS)
+		if err != nil {
+			logrus.Warnf("第 %d 页提取数据失败: %v", pageNum, err)
+			break
+		}
+
+		resultStr, ok := result.(string)
+		if !ok {
+			logrus.Warnf("第 %d 页提取数据类型错误", pageNum)
+			break
+		}
+
+		var pageData struct {
+			Notes []NoteMetrics `json:"notes"`
+			Count int           `json:"count"`
+		}
+		if err := json.Unmarshal([]byte(resultStr), &pageData); err != nil {
+			logrus.Warnf("第 %d 页解析数据失败: %v", pageNum, err)
+			break
+		}
+
+		if len(pageData.Notes) == 0 {
+			logrus.Infof("第 %d 页没有数据，停止翻页", pageNum)
+			break
+		}
+
+		// 添加到结果集
+		for _, note := range pageData.Notes {
+			if len(allNotes) >= limit {
+				break
+			}
+			allNotes = append(allNotes, note)
+		}
+
+		logrus.Infof("第 %d 页提取 %d 条笔记，累计 %d 条", pageNum, len(pageData.Notes), len(allNotes))
+
+		// 如果已经达到限制，退出
+		if len(allNotes) >= limit {
+			break
+		}
+
+		// 检查是否有下一页
+		hasNext, err := page.Eval(`() => {
+			const nextBtn = document.querySelector('.d-pagination-page.d-clickable:not(.disabled):last-of-type');
+			return nextBtn !== null && !nextBtn.classList.contains('disabled');
+		}`)
+		if err != nil || hasNext == false {
+			logrus.Info("没有更多页面，停止翻页")
+			break
+		}
+
+		// 点击下一页
+		logrus.Infof("点击下一页...")
+		_, clickErr := page.Eval(`() => {
+			const nextBtn = document.querySelector('.d-pagination-page.d-clickable:not(.disabled):last-of-type');
+			if (nextBtn) {
+				nextBtn.click();
+				return true;
+			}
+			return false;
+		}`)
+		if clickErr != nil {
+			logrus.Warnf("点击下一页失败: %v", clickErr)
+			break
+		}
+
+		// 等待页面加载
+		time.Sleep(2 * time.Second)
+		pageNum++
+	}
+
+	logrus.Infof("获取内容分析数据成功，共 %d 条笔记", len(allNotes))
+	return &ContentAnalytics{Notes: allNotes}, nil
+}
+
+// applySorting 应用排序到页面
+func (d *DataAction) applySorting(page browser.Page, sortBy SortField, sortOrder SortOrder) error {
+	// 映射排序字段到表头列索引
+	columnMap := map[SortField]int{
+		SortByExposure:       2,  // 曝光（第2列，从1开始）
+		SortByViews:          3,  // 观看
+		SortByClickRate:      4,  // 封面点击率
+		SortByLikes:          5,  // 点赞
+		SortByComments:       6,  // 评论
+		SortByCollects:       7,  // 收藏
+		SortByFollowerGrowth: 8,  // 涨粉
+		SortByShares:         9,  // 分享
+		SortByDuration:       10, // 人均观看时长
+		SortByBarrage:        11, // 弹幕
+	}
+
+	columnIndex, ok := columnMap[sortBy]
+	if !ok {
+		return fmt.Errorf("不支持的排序字段: %s", sortBy)
+	}
+
+	logrus.Infof("按 %s %s 排序", sortBy, sortOrder)
+
+	// 排序图标循环模式: 未排序 → 升序(1次点击) → 降序(2次点击) → 未排序(3次点击)
+	// 默认页面处于未排序状态
+	clickCount := 1 // 升序需要点击1次
+	if sortOrder == SortDesc {
+		clickCount = 2 // 降序需要点击2次
+	}
+
+	clickScript := fmt.Sprintf(`() => {
+		const header = document.querySelector('table thead th:nth-child(%d)');
+		if (!header) {
+			return {error: '未找到表头列'};
+		}
+		const sortIcon = header.querySelector('.d-table__th-cell-sort');
+		if (!sortIcon) {
+			return {error: '未找到排序图标'};
+		}
+		sortIcon.click();
+		return {clicked: true};
+	}`, columnIndex)
+
+	// 执行点击
+	for i := 0; i < clickCount; i++ {
+		_, err := page.Eval(clickScript)
+		if err != nil {
+			return fmt.Errorf("点击排序图标失败(第%d次): %w", i+1, err)
+		}
+		time.Sleep(1 * time.Second) // 等待排序完成
+	}
+
+	logrus.Info("排序应用成功")
+	return nil
 }
 
 // convertNoteData 将API返回的笔记数据转换为NoteMetrics格式

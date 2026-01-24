@@ -167,8 +167,10 @@ type GetFanAnalyticsArgs struct {
 
 // GetContentAnalyticsArgs 获取内容分析参数
 type GetContentAnalyticsArgs struct {
-	Placeholder bool `json:"_,omitempty"`
-	Limit       int  `json:"limit,omitempty" jsonschema:"限制返回笔记数量，默认20，最大100"`
+	Placeholder bool   `json:"_,omitempty"`
+	Limit       int    `json:"limit,omitempty" jsonschema:"限制返回笔记数量，默认20，最大100"`
+	SortBy      string `json:"sort_by,omitempty" jsonschema:"排序字段: exposure(曝光)/views(观看)/click_rate(点击率)/likes(点赞)/comments(评论)/collects(收藏)/follower_growth(涨粉)/shares(分享)/duration(观看时长)/barrage(弹幕)"`
+	SortOrder   string `json:"sort_order,omitempty" jsonschema:"排序方向: asc(升序)/desc(降序)，默认desc"`
 }
 
 // InitMCPServer 初始化 MCP Server
@@ -743,7 +745,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 			if args.Limit > 100 {
 				args.Limit = 100
 			}
-			result := appServer.handleGetContentAnalytics(ctx, args.Limit)
+			result := appServer.handleGetContentAnalytics(ctx, args.Limit, args.SortBy, args.SortOrder)
 			return convertToMCPResult(result), nil, nil
 		}),
 	)

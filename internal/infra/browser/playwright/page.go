@@ -42,7 +42,7 @@ func (p *page) Close() error {
 
 func (p *page) Goto(url string) error {
 	_, err := p.p.Goto(url, playwright.PageGotoOptions{
-		WaitUntil: playwright.WaitUntilStateNetworkidle,
+		WaitUntil: playwright.WaitUntilStateLoad,
 	})
 	return err
 }
@@ -84,10 +84,18 @@ func (p *page) WaitDOMStable(maxWait time.Duration, stabilityThreshold float64) 
 		select {
 		case <-ticker.C:
 			if err := p.checkContext(); err != nil {
+				// Context 被销毁通常是因为页面导航，这是正常情况
+				if isContextDestroyedError(err) {
+					return nil
+				}
 				return err
 			}
 			val, err := p.Eval(`() => document.body ? document.body.innerHTML.length : 0`)
 			if err != nil {
+				// Context 被销毁通常是因为页面导航，这是正常情况
+				if isContextDestroyedError(err) {
+					return nil
+				}
 				return err
 			}
 			current := toFloat(val)
@@ -108,12 +116,25 @@ func (p *page) WaitDOMStable(maxWait time.Duration, stabilityThreshold float64) 
 			prev = current
 		default:
 			if err := p.checkContext(); err != nil {
+				// Context 被销毁通常是因为页面导航，这是正常情况
+				if isContextDestroyedError(err) {
+					return nil
+				}
 				return err
 			}
 			time.Sleep(defaultWaitDOMStableInterval / 2)
 		}
 	}
 	return errors.New("dom not stable before timeout")
+}
+
+// isContextDestroyedError 检查是否是 execution context destroyed 错误
+func isContextDestroyedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := err.Error()
+	return regexp.MustCompile(`(?i)execution context.*destroyed|context.*destroyed`).MatchString(errMsg)
 }
 
 func (p *page) WaitVisible(selector string) error {
@@ -679,4 +700,65 @@ func elementStateValue(ptr *playwright.ElementState) playwright.ElementState {
 		return *ptr
 	}
 	return ""
+}
+
+// Route 注册网络请求拦截器
+func (p *page) Route(urlPattern string, handler browser.RouteHandler) error {
+	return p.p.Route(urlPattern, func(route playwright.Route) {
+		// 包装 Playwright Route 为 browser.Route 接口
+		wrappedRoute := &playwrightRoute{route: route}
+		handler(wrappedRoute)
+	})
+}
+
+// UnrouteAll 移除所有路由拦截
+func (p *page) UnrouteAll() error {
+	return p.p.Unroute("**/*")
+}
+
+// playwrightRoute 实现 browser.Route 接口
+type playwrightRoute struct {
+	route playwright.Route
+}
+
+func (r *playwrightRoute) Request() browser.Request {
+	return &playwrightRequest{req: r.route.Request()}
+}
+
+func (r *playwrightRoute) Continue() error {
+	return r.route.Continue()
+}
+
+func (r *playwrightRoute) Abort() error {
+	return r.route.Abort()
+}
+
+func (r *playwrightRoute) Fulfill(options browser.FulfillOptions) error {
+	return r.route.Fulfill(playwright.RouteFulfillOptions{
+		Status:  playwright.Int(options.Status),
+		Headers: options.Headers,
+		Body:    options.Body,
+	})
+}
+
+// playwrightRequest 实现 browser.Request 接口
+type playwrightRequest struct {
+	req playwright.Request
+}
+
+func (r *playwrightRequest) URL() string {
+	return r.req.URL()
+}
+
+func (r *playwrightRequest) Method() string {
+	return r.req.Method()
+}
+
+func (r *playwrightRequest) Headers() map[string]string {
+	return r.req.Headers()
+}
+
+func (r *playwrightRequest) PostData() string {
+	data, _ := r.req.PostData()
+	return data
 }

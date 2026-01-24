@@ -1315,8 +1315,21 @@ func (s *AppServer) handleGetFanAnalytics(ctx context.Context, period string) *M
 }
 
 // handleGetContentAnalytics 处理获取内容分析请求
-func (s *AppServer) handleGetContentAnalytics(ctx context.Context, limit int) *MCPToolResult {
-	analytics, err := s.xiaohongshuService.GetContentAnalytics(ctx, limit)
+func (s *AppServer) handleGetContentAnalytics(ctx context.Context, limit int, sortBy, sortOrder string) *MCPToolResult {
+	// 转换排序参数
+	var sortField xiaohongshu.SortField
+	var order xiaohongshu.SortOrder
+
+	if sortBy != "" {
+		sortField = xiaohongshu.SortField(sortBy)
+	}
+	if sortOrder != "" {
+		order = xiaohongshu.SortOrder(sortOrder)
+	} else {
+		order = xiaohongshu.SortDesc // 默认降序
+	}
+
+	analytics, err := s.xiaohongshuService.GetContentAnalytics(ctx, limit, sortField, order)
 	if err != nil {
 		return &MCPToolResult{
 			IsError: true,

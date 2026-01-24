@@ -56,6 +56,10 @@ type Page interface {
 	Mouse() Mouse
 	Keyboard() Keyboard
 
+	// --- 网络拦截 ---
+	Route(urlPattern string, handler RouteHandler) error
+	UnrouteAll() error
+
 	// --- 上下文控制 ---
 	WithContext(ctx context.Context) Page
 	WithTimeout(timeout time.Duration) Page
@@ -130,6 +134,32 @@ type Keyboard interface {
 	Press(key string) error
 	Down(key string) error
 	Up(key string) error
+}
+
+// RouteHandler 网络请求拦截处理函数
+type RouteHandler func(route Route)
+
+// Route 表示被拦截的网络请求
+type Route interface {
+	Request() Request
+	Continue() error
+	Abort() error
+	Fulfill(options FulfillOptions) error
+}
+
+// Request 表示网络请求信息
+type Request interface {
+	URL() string
+	Method() string
+	Headers() map[string]string
+	PostData() string
+}
+
+// FulfillOptions 用于自定义响应
+type FulfillOptions struct {
+	Status  int
+	Headers map[string]string
+	Body    []byte
 }
 
 // Engine 负责启动/关闭浏览器实例并创建 Page。
