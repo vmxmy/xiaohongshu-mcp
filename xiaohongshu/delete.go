@@ -5,31 +5,34 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/proto"
 	"github.com/sirupsen/logrus"
+	"github.com/xpzouying/xiaohongshu-mcp/internal/infra/browser"
 )
 
 // DeleteAction 删除操作
 type DeleteAction struct {
-	page *rod.Page
+	page browser.Page
 }
 
 // NewDeleteAction 创建删除操作实例
-func NewDeleteAction(page *rod.Page) *DeleteAction {
+func NewDeleteAction(page browser.Page) *DeleteAction {
 	return &DeleteAction{page: page}
 }
 
 // DeleteFeed 删除自己的笔记
 func (d *DeleteAction) DeleteFeed(ctx context.Context, feedID, xsecToken string) error {
-	page := d.page.Context(ctx).Timeout(60 * time.Second)
+	page := d.page.WithContext(ctx).WithTimeout(60 * time.Second)
 
 	url := makeFeedDetailURL(feedID, xsecToken)
 	logrus.Infof("打开 feed 详情页进行删除: %s", url)
 
 	// 导航到详情页
-	page.MustNavigate(url)
-	page.MustWaitDOMStable()
+	if err := page.Goto(url); err != nil {
+		return fmt.Errorf("导航到详情页失败: %w", err)
+	}
+	if err := page.WaitDOMStable(time.Second, 0.1); err != nil {
+		return fmt.Errorf("等待DOM稳定失败: %w", err)
+	}
 	time.Sleep(2 * time.Second)
 
 	// 检查页面是否可访问
@@ -45,7 +48,7 @@ func (d *DeleteAction) DeleteFeed(ctx context.Context, feedID, xsecToken string)
 
 	// 点击更多按钮
 	logrus.Info("点击更多按钮...")
-	if err := moreBtn.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if err := moreBtn.Click(); err != nil {
 		return fmt.Errorf("点击更多按钮失败: %w", err)
 	}
 
@@ -59,7 +62,7 @@ func (d *DeleteAction) DeleteFeed(ctx context.Context, feedID, xsecToken string)
 
 	// 点击删除按钮
 	logrus.Info("点击删除按钮...")
-	if err := deleteBtn.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if err := deleteBtn.Click(); err != nil {
 		return fmt.Errorf("点击删除按钮失败: %w", err)
 	}
 
@@ -73,7 +76,7 @@ func (d *DeleteAction) DeleteFeed(ctx context.Context, feedID, xsecToken string)
 
 	// 点击确认删除
 	logrus.Info("点击确认删除...")
-	if err := confirmBtn.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if err := confirmBtn.Click(); err != nil {
 		return fmt.Errorf("点击确认按钮失败: %w", err)
 	}
 
@@ -85,14 +88,18 @@ func (d *DeleteAction) DeleteFeed(ctx context.Context, feedID, xsecToken string)
 
 // DeleteComment 删除自己的评论
 func (d *DeleteAction) DeleteComment(ctx context.Context, feedID, xsecToken, commentID, userID string) error {
-	page := d.page.Context(ctx).Timeout(5 * time.Minute)
+	page := d.page.WithContext(ctx).WithTimeout(5 * time.Minute)
 
 	url := makeFeedDetailURL(feedID, xsecToken)
 	logrus.Infof("打开 feed 详情页进行删除评论: %s", url)
 
 	// 导航到详情页
-	page.MustNavigate(url)
-	page.MustWaitDOMStable()
+	if err := page.Goto(url); err != nil {
+		return fmt.Errorf("导航到详情页失败: %w", err)
+	}
+	if err := page.WaitDOMStable(time.Second, 0.1); err != nil {
+		return fmt.Errorf("等待DOM稳定失败: %w", err)
+	}
 	time.Sleep(2 * time.Second)
 
 	// 检查页面是否可访问
@@ -111,7 +118,9 @@ func (d *DeleteAction) DeleteComment(ctx context.Context, feedID, xsecToken, com
 
 	// 滚动到评论位置
 	logrus.Info("滚动到评论位置...")
-	commentEl.MustScrollIntoView()
+	if err := commentEl.ScrollIntoView(); err != nil {
+		return fmt.Errorf("滚动到评论位置失败: %w", err)
+	}
 	time.Sleep(1 * time.Second)
 
 	// 查找评论的更多按钮
@@ -122,7 +131,7 @@ func (d *DeleteAction) DeleteComment(ctx context.Context, feedID, xsecToken, com
 
 	// 点击更多按钮
 	logrus.Info("点击评论更多按钮...")
-	if err := moreBtn.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if err := moreBtn.Click(); err != nil {
 		return fmt.Errorf("点击更多按钮失败: %w", err)
 	}
 
@@ -136,7 +145,7 @@ func (d *DeleteAction) DeleteComment(ctx context.Context, feedID, xsecToken, com
 
 	// 点击删除按钮
 	logrus.Info("点击删除按钮...")
-	if err := deleteBtn.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if err := deleteBtn.Click(); err != nil {
 		return fmt.Errorf("点击删除按钮失败: %w", err)
 	}
 
@@ -151,7 +160,7 @@ func (d *DeleteAction) DeleteComment(ctx context.Context, feedID, xsecToken, com
 
 	// 点击确认删除
 	logrus.Info("点击确认删除...")
-	if err := confirmBtn.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if err := confirmBtn.Click(); err != nil {
 		return fmt.Errorf("点击确认按钮失败: %w", err)
 	}
 
@@ -162,7 +171,7 @@ func (d *DeleteAction) DeleteComment(ctx context.Context, feedID, xsecToken, com
 }
 
 // findMoreButton 查找更多按钮（三个点）
-func (d *DeleteAction) findMoreButton(page *rod.Page) (*rod.Element, error) {
+func (d *DeleteAction) findMoreButton(page browser.Page) (browser.Element, error) {
 	selectors := []string{
 		".more-button",
 		"[class*='more']",
@@ -171,7 +180,7 @@ func (d *DeleteAction) findMoreButton(page *rod.Page) (*rod.Element, error) {
 	}
 
 	for _, sel := range selectors {
-		elem, err := page.Timeout(3 * time.Second).Element(sel)
+		elem, err := page.WithTimeout(3 * time.Second).Element(sel)
 		if err == nil && elem != nil {
 			logrus.Infof("找到更多按钮: %s", sel)
 			return elem, nil
@@ -182,7 +191,7 @@ func (d *DeleteAction) findMoreButton(page *rod.Page) (*rod.Element, error) {
 }
 
 // findCommentMoreButton 查找评论的更多按钮
-func (d *DeleteAction) findCommentMoreButton(commentEl *rod.Element) (*rod.Element, error) {
+func (d *DeleteAction) findCommentMoreButton(commentEl browser.Element) (browser.Element, error) {
 	selectors := []string{
 		".more",
 		"[class*='more']",
@@ -190,7 +199,7 @@ func (d *DeleteAction) findCommentMoreButton(commentEl *rod.Element) (*rod.Eleme
 	}
 
 	for _, sel := range selectors {
-		elem, err := commentEl.Timeout(3 * time.Second).Element(sel)
+		elem, err := commentEl.Element(sel)
 		if err == nil && elem != nil {
 			logrus.Infof("找到评论更多按钮: %s", sel)
 			return elem, nil
@@ -201,14 +210,14 @@ func (d *DeleteAction) findCommentMoreButton(commentEl *rod.Element) (*rod.Eleme
 }
 
 // findDeleteButton 查找删除按钮
-func (d *DeleteAction) findDeleteButton(page *rod.Page) (*rod.Element, error) {
+func (d *DeleteAction) findDeleteButton(page browser.Page) (browser.Element, error) {
 	selectors := []string{
 		"button:has-text('删除')",
 		"[class*='delete']",
 	}
 
 	for _, sel := range selectors {
-		elem, err := page.Timeout(3 * time.Second).Element(sel)
+		elem, err := page.WithTimeout(3 * time.Second).Element(sel)
 		if err == nil && elem != nil {
 			logrus.Infof("找到删除按钮: %s", sel)
 			return elem, nil
@@ -231,7 +240,7 @@ func (d *DeleteAction) findDeleteButton(page *rod.Page) (*rod.Element, error) {
 }
 
 // findConfirmButton 查找确认按钮
-func (d *DeleteAction) findConfirmButton(page *rod.Page) (*rod.Element, error) {
+func (d *DeleteAction) findConfirmButton(page browser.Page) (browser.Element, error) {
 	selectors := []string{
 		"button:has-text('确认')",
 		"button:has-text('确定')",
@@ -239,7 +248,7 @@ func (d *DeleteAction) findConfirmButton(page *rod.Page) (*rod.Element, error) {
 	}
 
 	for _, sel := range selectors {
-		elem, err := page.Timeout(3 * time.Second).Element(sel)
+		elem, err := page.WithTimeout(3 * time.Second).Element(sel)
 		if err == nil && elem != nil {
 			logrus.Infof("找到确认按钮: %s", sel)
 			return elem, nil

@@ -4,12 +4,12 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/go-rod/rod"
 	"github.com/pkg/errors"
+	"github.com/xpzouying/xiaohongshu-mcp/internal/infra/browser"
 )
 
 // waitForPublishResultUI 通过UI元素等待并验证发布结果(备用方案)
-func waitForPublishResultUI(page *rod.Page) error {
+func waitForPublishResultUI(page browser.Page) error {
 	maxWaitTime := 30 * time.Second
 	checkInterval := 500 * time.Millisecond
 	start := time.Now()

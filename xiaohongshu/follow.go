@@ -6,18 +6,17 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/proto"
 	"github.com/sirupsen/logrus"
+	"github.com/xpzouying/xiaohongshu-mcp/internal/infra/browser"
 )
 
 // FollowAction 关注操作
 type FollowAction struct {
-	page *rod.Page
+	page browser.Page
 }
 
 // NewFollowAction 创建关注操作实例
-func NewFollowAction(page *rod.Page) *FollowAction {
+func NewFollowAction(page browser.Page) *FollowAction {
 	return &FollowAction{page: page}
 }
 
@@ -33,7 +32,7 @@ func (f *FollowAction) Unfollow(ctx context.Context, userID, xsecToken string) e
 
 // perform 执行关注/取关操作
 func (f *FollowAction) perform(ctx context.Context, userID, xsecToken string, targetFollowed bool) error {
-	page := f.page.Context(ctx).Timeout(60 * time.Second)
+	page := f.page.WithContext(ctx).WithTimeout(60 * time.Second)
 
 	// 构建用户主页 URL
 	url := makeUserProfileURL(userID, xsecToken)
@@ -45,8 +44,12 @@ func (f *FollowAction) perform(ctx context.Context, userID, xsecToken string, ta
 	logrus.Infof("打开用户主页进行%s: %s", actionName, url)
 
 	// 导航到用户主页
-	page.MustNavigate(url)
-	page.MustWaitDOMStable()
+	if err := page.Goto(url); err != nil {
+		return fmt.Errorf("导航失败: %w", err)
+	}
+	if err := page.WaitDOMStable(5*time.Second, 0.1); err != nil {
+		logrus.Warnf("等待 DOM 稳定失败: %v", err)
+	}
 	time.Sleep(2 * time.Second)
 
 	// 检查页面是否可访问
@@ -92,7 +95,7 @@ func (f *FollowAction) perform(ctx context.Context, userID, xsecToken string, ta
 
 	// 点击按钮
 	logrus.Infof("点击%s按钮...", actionName)
-	if err := followBtn.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if err := followBtn.Click(); err != nil {
 		logrus.Warnf("点击失败: %v，尝试使用 JS 点击", err)
 
 		// 备用方案：使用 JavaScript 点击
@@ -134,7 +137,7 @@ func (f *FollowAction) perform(ctx context.Context, userID, xsecToken string, ta
 }
 
 // findFollowButton 查找关注按钮
-func (f *FollowAction) findFollowButton(page *rod.Page) (*rod.Element, error) {
+func (f *FollowAction) findFollowButton(page browser.Page) (browser.Element, error) {
 	// 尝试多个选择器
 	selectors := []string{
 		"button.follow-button",
@@ -144,7 +147,7 @@ func (f *FollowAction) findFollowButton(page *rod.Page) (*rod.Element, error) {
 	}
 
 	for _, sel := range selectors {
-		elem, err := page.Timeout(3 * time.Second).Element(sel)
+		elem, err := page.WithTimeout(3 * time.Second).Element(sel)
 		if err == nil && elem != nil {
 			logrus.Infof("找到关注按钮: %s", sel)
 			return elem, nil
@@ -167,9 +170,9 @@ func (f *FollowAction) findFollowButton(page *rod.Page) (*rod.Element, error) {
 }
 
 // getFollowState 获取当前关注状态
-func (f *FollowAction) getFollowState(page *rod.Page) (bool, error) {
+func (f *FollowAction) getFollowState(page browser.Page) (bool, error) {
 	// 方法1: 从 __INITIAL_STATE__ 读取
-	result := page.MustEval(`() => {
+	result, err := page.Eval(`() => {
 		if (window.__INITIAL_STATE__ &&
 		    window.__INITIAL_STATE__.user &&
 		    window.__INITIAL_STATE__.user.userPageData) {
@@ -181,13 +184,16 @@ func (f *FollowAction) getFollowState(page *rod.Page) (bool, error) {
 			}
 		}
 		return "";
-	}`).String()
+	}`)
+	if err != nil {
+		logrus.Warnf("Eval 失败: %v", err)
+	}
 
-	if result != "" {
+	if resultStr, ok := result.(string); ok && resultStr != "" {
 		var state struct {
 			Followed bool `json:"followed"`
 		}
-		if err := json.Unmarshal([]byte(result), &state); err == nil {
+		if err := json.Unmarshal([]byte(resultStr), &state); err == nil {
 			logrus.Infof("从页面状态读取关注状态: %v", state.Followed)
 			return state.Followed, nil
 		}

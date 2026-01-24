@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"time"
 
-	"github.com/go-rod/rod"
+	playwrightgo "github.com/playwright-community/playwright-go"
 	"github.com/sirupsen/logrus"
-	"github.com/xpzouying/xiaohongshu-mcp/browser"
+	"github.com/xpzouying/xiaohongshu-mcp/configs"
 	"github.com/xpzouying/xiaohongshu-mcp/cookies"
+	"github.com/xpzouying/xiaohongshu-mcp/internal/infra/browser"
+	"github.com/xpzouying/xiaohongshu-mcp/internal/infra/browser/playwright"
 	"github.com/xpzouying/xiaohongshu-mcp/xiaohongshu"
 )
 
@@ -20,10 +23,16 @@ func main() {
 	flag.Parse()
 
 	// 登录的时候，需要界面，所以不能无头模式
-	b := browser.NewBrowser(false, browser.WithBinPath(binPath))
-	defer b.Close()
+	engine := newBrowserEngine()
+	if err := engine.Start(); err != nil {
+		logrus.Fatalf("failed to start browser: %v", err)
+	}
+	defer engine.Close()
 
-	page := b.NewPage()
+	page, err := engine.NewPage()
+	if err != nil {
+		logrus.Fatalf("failed to create page: %v", err)
+	}
 	defer page.Close()
 
 	action := xiaohongshu.NewLogin(page)
@@ -63,8 +72,35 @@ func main() {
 
 }
 
-func saveCookies(page *rod.Page) error {
-	cks, err := page.Browser().GetCookies()
+// newBrowserEngine 创建 Playwright 浏览器引擎
+func newBrowserEngine() browser.Engine {
+	cfg := playwright.DefaultConfig()
+	cfg.Headless = configs.IsHeadless()
+	cfg.CookiePath = cookies.GetCookiesFilePath()
+	cfg.ActionTimeout = 30 * time.Second
+	cfg.NavigationTimeout = 60 * time.Second
+
+	return playwright.New(cfg)
+}
+
+func saveCookies(page browser.Page) error {
+	// 将 browser.Page 转换为 Playwright 的具体实现，获取 context
+	type contextGetter interface {
+		GetContext() playwrightgo.BrowserContext
+	}
+
+	pg, ok := page.(contextGetter)
+	if !ok {
+		logrus.Warn("无法获取 Playwright context，跳过保存 cookies")
+		return nil
+	}
+
+	ctx := pg.GetContext()
+	if ctx == nil {
+		return nil
+	}
+
+	cks, err := ctx.Cookies()
 	if err != nil {
 		return err
 	}

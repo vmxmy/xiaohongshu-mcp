@@ -4,6 +4,10 @@
 
 将所有硬编码的URL、CSS选择器、超时参数等提取到配置文件 `config.yaml` 中，使代码更易维护。当小红书页面更新时，只需修改配置文件，无需改动代码。
 
+### Playwright 迁移注意
+
+在 Playwright 迁移过程中，我们统一扩展了 `internal/infra/browser/engine.go` 中的 `browser.Page` 抽象，新增了导航等待、Eval、鼠标键盘、元素查询等方法，便于业务层不依赖具体引擎。后续若需要新增交互能力，请优先在该接口中补充，再由 Playwright 实现具体逻辑。
+
 ## 改造步骤
 
 ### 1. 已完成的工作

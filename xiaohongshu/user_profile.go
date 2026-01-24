@@ -6,34 +6,42 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-rod/rod"
+	"github.com/xpzouying/xiaohongshu-mcp/internal/infra/browser"
 )
 
 type UserProfileAction struct {
-	page *rod.Page
+	page browser.Page
 }
 
-func NewUserProfileAction(page *rod.Page) *UserProfileAction {
-	pp := page.Timeout(60 * time.Second)
+func NewUserProfileAction(page browser.Page) *UserProfileAction {
+	pp := page.WithTimeout(60 * time.Second)
 	return &UserProfileAction{page: pp}
 }
 
 // UserProfile 获取用户基本信息及帖子
 func (u *UserProfileAction) UserProfile(ctx context.Context, userID, xsecToken string) (*UserProfileResponse, error) {
-	page := u.page.Context(ctx)
+	page := u.page.WithContext(ctx)
 
 	searchURL := makeUserProfileURL(userID, xsecToken)
-	page.MustNavigate(searchURL)
-	page.MustWaitStable()
+	if err := page.Goto(searchURL); err != nil {
+		return nil, fmt.Errorf("failed to navigate to user profile: %w", err)
+	}
+	if err := page.WaitDOMStable(time.Second, 0.1); err != nil {
+		return nil, fmt.Errorf("failed to wait for page stable: %w", err)
+	}
 
 	return u.extractUserProfileData(page)
 }
 
 // extractUserProfileData 从页面中提取用户资料数据的通用方法
-func (u *UserProfileAction) extractUserProfileData(page *rod.Page) (*UserProfileResponse, error) {
-	page.MustWait(`() => window.__INITIAL_STATE__ !== undefined`)
+func (u *UserProfileAction) extractUserProfileData(page browser.Page) (*UserProfileResponse, error) {
+	// 等待 __INITIAL_STATE__ 对象存在
+	if err := page.WaitForFunction(`() => window.__INITIAL_STATE__ !== undefined`, 30*time.Second); err != nil {
+		return nil, fmt.Errorf("failed to wait for __INITIAL_STATE__: %w", err)
+	}
 
-	userDataResult := page.MustEval(`() => {
+	// 获取用户数据：window.__INITIAL_STATE__.user.userPageData.value
+	userDataRaw, err := page.Eval(`() => {
 		if (window.__INITIAL_STATE__ &&
 		    window.__INITIAL_STATE__.user &&
 		    window.__INITIAL_STATE__.user.userPageData) {
@@ -44,14 +52,18 @@ func (u *UserProfileAction) extractUserProfileData(page *rod.Page) (*UserProfile
 			}
 		}
 		return "";
-	}`).String()
+	}`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to eval user data: %w", err)
+	}
 
-	if userDataResult == "" {
+	userDataResult, ok := userDataRaw.(string)
+	if !ok || userDataResult == "" {
 		return nil, fmt.Errorf("user.userPageData.value not found in __INITIAL_STATE__")
 	}
 
-	// 2. 获取用户帖子：window.__INITIAL_STATE__.user.notes.value
-	notesResult := page.MustEval(`() => {
+	// 获取用户帖子：window.__INITIAL_STATE__.user.notes.value
+	notesRaw, err := page.Eval(`() => {
 		if (window.__INITIAL_STATE__ &&
 		    window.__INITIAL_STATE__.user &&
 		    window.__INITIAL_STATE__.user.notes) {
@@ -63,9 +75,13 @@ func (u *UserProfileAction) extractUserProfileData(page *rod.Page) (*UserProfile
 			}
 		}
 		return "";
-	}`).String()
+	}`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to eval notes data: %w", err)
+	}
 
-	if notesResult == "" {
+	notesResult, ok := notesRaw.(string)
+	if !ok || notesResult == "" {
 		return nil, fmt.Errorf("user.notes.value not found in __INITIAL_STATE__")
 	}
 
@@ -105,7 +121,7 @@ func makeUserProfileURL(userID, xsecToken string) string {
 }
 
 func (u *UserProfileAction) GetMyProfileViaSidebar(ctx context.Context) (*UserProfileResponse, error) {
-	page := u.page.Context(ctx)
+	page := u.page.WithContext(ctx)
 
 	// 创建导航动作
 	navigate := NewNavigate(page)
@@ -116,7 +132,9 @@ func (u *UserProfileAction) GetMyProfileViaSidebar(ctx context.Context) (*UserPr
 	}
 
 	// 等待页面加载完成并获取 __INITIAL_STATE__
-	page.MustWaitStable()
+	if err := page.WaitDOMStable(time.Second, 0.1); err != nil {
+		return nil, fmt.Errorf("failed to wait for page stable: %w", err)
+	}
 
 	return u.extractUserProfileData(page)
 }

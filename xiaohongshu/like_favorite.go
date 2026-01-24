@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/go-rod/rod"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	myerrors "github.com/xpzouying/xiaohongshu-mcp/errors"
+	"github.com/xpzouying/xiaohongshu-mcp/internal/infra/browser"
 )
 
 // ActionResult 通用动作响应（点赞/收藏等）
@@ -35,20 +35,24 @@ const (
 )
 
 type interactAction struct {
-	page *rod.Page
+	page browser.Page
 }
 
-func newInteractAction(page *rod.Page) *interactAction {
+func newInteractAction(page browser.Page) *interactAction {
 	return &interactAction{page: page}
 }
 
-func (a *interactAction) preparePage(ctx context.Context, actionType interactActionType, feedID, xsecToken string) *rod.Page {
-	page := a.page.Context(ctx).Timeout(60 * time.Second)
+func (a *interactAction) preparePage(ctx context.Context, actionType interactActionType, feedID, xsecToken string) browser.Page {
+	page := a.page.WithContext(ctx).WithTimeout(60 * time.Second)
 	url := makeFeedDetailURL(feedID, xsecToken)
 	logrus.Infof("Opening feed detail page for %s: %s", actionType, url)
 
-	page.MustNavigate(url)
-	page.MustWaitDOMStable()
+	if err := page.Goto(url); err != nil {
+		logrus.Warnf("failed to navigate to %s: %v", url, err)
+	}
+	if err := page.WaitDOMStable(5*time.Second, 0.95); err != nil {
+		logrus.Warnf("WaitDOMStable failed: %v", err)
+	}
 	time.Sleep(2 * time.Second)
 
 	// 等待 __INITIAL_STATE__ 就绪
@@ -58,17 +62,22 @@ func (a *interactAction) preparePage(ctx context.Context, actionType interactAct
 }
 
 // waitForInitialState 等待页面 __INITIAL_STATE__ 数据就绪
-func (a *interactAction) waitForInitialState(page *rod.Page) {
+func (a *interactAction) waitForInitialState(page browser.Page) {
 	maxRetries := 5
 	for i := 0; i < maxRetries; i++ {
-		result := page.MustEval(`() => {
+		result, err := page.Eval(`() => {
 			return !!(window.__INITIAL_STATE__ &&
 				window.__INITIAL_STATE__.note &&
 				window.__INITIAL_STATE__.note.noteDetailMap &&
 				Object.keys(window.__INITIAL_STATE__.note.noteDetailMap).length > 0);
-		}`).Bool()
+		}`)
+		if err != nil {
+			logrus.Warnf("Eval error when waiting for __INITIAL_STATE__: %v", err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
 
-		if result {
+		if boolResult, ok := result.(bool); ok && boolResult {
 			logrus.Info("__INITIAL_STATE__ 数据就绪")
 			return
 		}
@@ -79,9 +88,10 @@ func (a *interactAction) waitForInitialState(page *rod.Page) {
 	logrus.Warn("__INITIAL_STATE__ 等待超时，继续尝试操作")
 }
 
-func (a *interactAction) performClick(page *rod.Page, selector string) {
-	element := page.MustElement(selector)
-	element.MustClick()
+func (a *interactAction) performClick(page browser.Page, selector string) {
+	if err := page.Click(selector); err != nil {
+		logrus.Warnf("click selector %s failed: %v", selector, err)
+	}
 }
 
 // LikeAction 负责处理点赞相关交互
@@ -89,7 +99,7 @@ type LikeAction struct {
 	*interactAction
 }
 
-func NewLikeAction(page *rod.Page) *LikeAction {
+func NewLikeAction(page browser.Page) *LikeAction {
 	return &LikeAction{interactAction: newInteractAction(page)}
 }
 
@@ -129,7 +139,7 @@ func (a *LikeAction) perform(ctx context.Context, feedID, xsecToken string, targ
 	return a.toggleLike(page, feedID, targetLiked, actionType)
 }
 
-func (a *LikeAction) toggleLike(page *rod.Page, feedID string, targetLiked bool, actionType interactActionType) error {
+func (a *LikeAction) toggleLike(page browser.Page, feedID string, targetLiked bool, actionType interactActionType) error {
 	a.performClick(page, SelectorLikeButton)
 	time.Sleep(3 * time.Second)
 
@@ -165,7 +175,7 @@ type FavoriteAction struct {
 	*interactAction
 }
 
-func NewFavoriteAction(page *rod.Page) *FavoriteAction {
+func NewFavoriteAction(page browser.Page) *FavoriteAction {
 	return &FavoriteAction{interactAction: newInteractAction(page)}
 }
 
@@ -205,7 +215,7 @@ func (a *FavoriteAction) perform(ctx context.Context, feedID, xsecToken string, 
 	return a.toggleFavorite(page, feedID, targetCollected, actionType)
 }
 
-func (a *FavoriteAction) toggleFavorite(page *rod.Page, feedID string, targetCollected bool, actionType interactActionType) error {
+func (a *FavoriteAction) toggleFavorite(page browser.Page, feedID string, targetCollected bool, actionType interactActionType) error {
 	a.performClick(page, SelectorCollectButton)
 	time.Sleep(3 * time.Second)
 
@@ -237,9 +247,9 @@ func (a *FavoriteAction) toggleFavorite(page *rod.Page, feedID string, targetCol
 }
 
 // getInteractState 从页面读取笔记的点赞/收藏状态（优先用DOM，fallback到__INITIAL_STATE__）
-func (a *interactAction) getInteractState(page *rod.Page, feedID string) (liked bool, collected bool, err error) {
+func (a *interactAction) getInteractState(page browser.Page, feedID string) (liked bool, collected bool, err error) {
 	// 优先使用 DOM 判断状态（更可靠）
-	result := page.MustEval(`() => {
+	result, evalErr := page.Eval(`() => {
 		const likeBtn = document.querySelector('.like-wrapper .like-lottie, .like-wrapper');
 		const collectBtn = document.querySelector('.collect-wrapper .collect-icon, .collect-wrapper');
 
@@ -280,9 +290,13 @@ func (a *interactAction) getInteractState(page *rod.Page, feedID string) (liked 
 		}
 
 		return JSON.stringify({liked: liked, collected: collected});
-	}`).String()
+	}`)
+	if evalErr != nil {
+		return false, false, errors.Wrap(evalErr, "eval interactState failed")
+	}
 
-	if result == "" {
+	resultStr, ok := result.(string)
+	if !ok || resultStr == "" {
 		return false, false, myerrors.ErrNoFeedDetail
 	}
 
@@ -291,7 +305,7 @@ func (a *interactAction) getInteractState(page *rod.Page, feedID string) (liked 
 		Liked     bool `json:"liked"`
 		Collected bool `json:"collected"`
 	}
-	if err := json.Unmarshal([]byte(result), &interactInfo); err != nil {
+	if err := json.Unmarshal([]byte(resultStr), &interactInfo); err != nil {
 		return false, false, errors.Wrap(err, "unmarshal interactInfo failed")
 	}
 

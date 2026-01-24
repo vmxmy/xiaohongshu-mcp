@@ -3,69 +3,73 @@ package xiaohongshu
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"time"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/proto"
 	"github.com/sirupsen/logrus"
-	"github.com/xpzouying/xiaohongshu-mcp/selector"
+	"github.com/xpzouying/xiaohongshu-mcp/internal/infra/browser"
 )
 
 // CommentFeedAction 表示 Feed 评论动作
 type CommentFeedAction struct {
-	page          *rod.Page
-	smartSelector *selector.SmartSelector
+	page browser.Page
+	// TODO: smartSelector 需要等待迁移到 browser 接口后再启用
+	// smartSelector *selector.SmartSelector
 }
 
 // NewCommentFeedAction 创建 Feed 评论动作
-func NewCommentFeedAction(page *rod.Page) *CommentFeedAction {
+func NewCommentFeedAction(page browser.Page) *CommentFeedAction {
+	// TODO: 等待 selector 迁移后再启用
 	// 尝试加载智能选择器
-	configPath := filepath.Join("configs", "selectors.yaml")
-	smartSelector, err := selector.NewSmartSelector(configPath, page)
-	if err != nil {
-		logrus.Warnf("加载智能选择器失败，使用传统方式: %v", err)
-	}
+	// configPath := filepath.Join("configs", "selectors.yaml")
+	// smartSelector, err := selector.NewSmartSelector(configPath, page)
+	// if err != nil {
+	// 	logrus.Warnf("加载智能选择器失败，使用传统方式: %v", err)
+	// }
 
 	return &CommentFeedAction{
-		page:          page,
-		smartSelector: smartSelector,
+		page: page,
+		// smartSelector: smartSelector,
 	}
 }
 
 // PostComment 发表评论到 Feed
 func (f *CommentFeedAction) PostComment(ctx context.Context, feedID, xsecToken, content string) error {
-	// 不使用 Context(ctx)，避免继承外部 context 的超时
-	page := f.page.Timeout(60 * time.Second)
+	// 设置超时，不继承外部 context
+	page := f.page.WithTimeout(60 * time.Second)
 
-	url := makeFeedDetailURL(feedID, xsecToken)
+	url := makeFeedDetailURL_browser(feedID, xsecToken)
 	logrus.Infof("打开 feed 详情页: %s", url)
 
 	// 导航到详情页
-	page.MustNavigate(url)
-	page.MustWaitDOMStable()
+	if err := page.Goto(url); err != nil {
+		return fmt.Errorf("导航失败: %w", err)
+	}
+	if err := page.WaitDOMStable(5*time.Second, 0.1); err != nil {
+		logrus.Warnf("等待 DOM 稳定失败: %v", err)
+	}
 	time.Sleep(1 * time.Second)
 
 	// 检测页面是否可访问
-	if err := checkPageAccessible(page); err != nil {
+	if err := checkPageAccessible_browser(page); err != nil {
 		return err
 	}
 
 	// 使用智能选择器查找评论输入框
-	var inputElem *rod.Element
+	var inputElem browser.Element
 	var err error
 
-	if f.smartSelector != nil {
-		logrus.Info("使用智能选择器查找评论输入框...")
-		inputElem, err = f.smartSelector.FindElement("comment_input")
-		if err != nil {
-			logrus.Warnf("智能选择器失败: %v，回退到传统方式", err)
-			inputElem, err = f.findInputFallback(page)
-		}
-	} else {
-		inputElem, err = f.findInputFallback(page)
-	}
+	// TODO: 等待 selector 迁移后再启用
+	// if f.smartSelector != nil {
+	// 	logrus.Info("使用智能选择器查找评论输入框...")
+	// 	inputElem, err = f.smartSelector.FindElement("comment_input")
+	// 	if err != nil {
+	// 		logrus.Warnf("智能选择器失败: %v，回退到传统方式", err)
+	// 		inputElem, err = f.findInputFallback(page)
+	// 	}
+	// } else {
+	inputElem, err = f.findInputFallback(page)
+	// }
 
 	if inputElem == nil {
 		logrus.Warnf("Failed to find comment input box with all selectors")
@@ -86,9 +90,9 @@ func (f *CommentFeedAction) PostComment(ctx context.Context, feedID, xsecToken, 
 	}
 	time.Sleep(500 * time.Millisecond)
 
-	// 点击输入框以激活（使用 MustClick 避免超时）
+	// 点击输入框以激活
 	logrus.Info("点击输入框...")
-	if err := inputElem.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if err := inputElem.Click(); err != nil {
 		logrus.Warnf("点击输入框失败: %v，尝试继续", err)
 		// 不返回错误，尝试继续输入
 	}
@@ -96,13 +100,16 @@ func (f *CommentFeedAction) PostComment(ctx context.Context, feedID, xsecToken, 
 
 	// 清空输入框（如果有内容）
 	logrus.Info("清空输入框...")
-	page.MustEval(`() => {
+	_, err = page.Eval(`() => {
 		const elem = document.querySelector('#content-textarea');
 		if (elem) {
 			elem.textContent = '';
 			elem.innerText = '';
 		}
 	}`)
+	if err != nil {
+		logrus.Warnf("清空输入框失败: %v", err)
+	}
 	time.Sleep(500 * time.Millisecond)
 
 	// 使用 JavaScript 直接设置内容（更可靠）
@@ -132,7 +139,7 @@ func (f *CommentFeedAction) PostComment(ctx context.Context, feedID, xsecToken, 
 	time.Sleep(1 * time.Second)
 
 	// 直接使用传统方式查找提交按钮（更可靠）
-	var submitButton *rod.Element
+	var submitButton browser.Element
 	logrus.Info("查找提交按钮...")
 	submitButton, err = f.findSubmitButtonFallback(page)
 
@@ -157,7 +164,7 @@ func (f *CommentFeedAction) PostComment(ctx context.Context, feedID, xsecToken, 
 
 	// 点击提交按钮
 	logrus.Info("点击提交按钮...")
-	if err := submitButton.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if err := submitButton.Click(); err != nil {
 		logrus.Warnf("点击提交按钮失败: %v，尝试使用 JS 点击", err)
 
 		// 备用方案：使用 JavaScript 点击
@@ -189,18 +196,21 @@ func (f *CommentFeedAction) PostComment(ctx context.Context, feedID, xsecToken, 
 // ReplyToComment 回复指定评论
 func (f *CommentFeedAction) ReplyToComment(ctx context.Context, feedID, xsecToken, commentID, userID, content string) error {
 	// 增加超时时间，因为需要滚动查找评论
-	// 注意：不使用 Context(ctx)，避免继承外部 context 的超时
-	page := f.page.Timeout(5 * time.Minute)
-	url := makeFeedDetailURL(feedID, xsecToken)
+	page := f.page.WithTimeout(5 * time.Minute)
+	url := makeFeedDetailURL_browser(feedID, xsecToken)
 	logrus.Infof("打开 feed 详情页进行回复: %s", url)
 
 	// 导航到详情页
-	page.MustNavigate(url)
-	page.MustWaitDOMStable()
+	if err := page.Goto(url); err != nil {
+		return fmt.Errorf("导航失败: %w", err)
+	}
+	if err := page.WaitDOMStable(5*time.Second, 0.1); err != nil {
+		logrus.Warnf("等待 DOM 稳定失败: %v", err)
+	}
 	time.Sleep(1 * time.Second)
 
 	// 检测页面是否可访问
-	if err := checkPageAccessible(page); err != nil {
+	if err := checkPageAccessible_browser(page); err != nil {
 		return err
 	}
 
@@ -215,7 +225,9 @@ func (f *CommentFeedAction) ReplyToComment(ctx context.Context, feedID, xsecToke
 
 	// 滚动到评论位置
 	logrus.Info("滚动到评论位置...")
-	commentEl.MustScrollIntoView()
+	if err := commentEl.ScrollIntoView(); err != nil {
+		return fmt.Errorf("滚动到评论失败: %w", err)
+	}
 	time.Sleep(1 * time.Second)
 
 	logrus.Info("准备点击回复按钮")
@@ -226,7 +238,7 @@ func (f *CommentFeedAction) ReplyToComment(ctx context.Context, feedID, xsecToke
 		return fmt.Errorf("无法找到回复按钮: %w", err)
 	}
 
-	if err := replyBtn.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if err := replyBtn.Click(); err != nil {
 		return fmt.Errorf("点击回复按钮失败: %w", err)
 	}
 
@@ -251,7 +263,7 @@ func (f *CommentFeedAction) ReplyToComment(ctx context.Context, feedID, xsecToke
 		return fmt.Errorf("无法找到提交按钮: %w", err)
 	}
 
-	if err := submitBtn.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if err := submitBtn.Click(); err != nil {
 		return fmt.Errorf("点击提交按钮失败: %w", err)
 	}
 
@@ -261,14 +273,14 @@ func (f *CommentFeedAction) ReplyToComment(ctx context.Context, feedID, xsecToke
 }
 
 // findCommentElement 查找指定评论元素（参考 feed_detail.go 的滚动逻辑）
-func findCommentElement(page *rod.Page, commentID, userID string) (*rod.Element, error) {
+func findCommentElement(page browser.Page, commentID, userID string) (browser.Element, error) {
 	logrus.Infof("开始查找评论 - commentID: %s, userID: %s", commentID, userID)
 
 	const maxAttempts = 100
 	const scrollInterval = 800 * time.Millisecond
 
 	// 先滚动到评论区
-	scrollToCommentsArea(page)
+	scrollToCommentsArea_browser(page)
 	time.Sleep(1 * time.Second)
 
 	var lastCommentCount = 0
@@ -280,13 +292,13 @@ func findCommentElement(page *rod.Page, commentID, userID string) (*rod.Element,
 		logrus.Infof("=== 查找尝试 %d/%d ===", attempt+1, maxAttempts)
 
 		// === 1. 检查是否到达底部 ===
-		if checkEndContainer(page) {
+		if checkEndContainer_browser(page) {
 			logrus.Info("已到达评论底部，未找到目标评论")
 			break
 		}
 
 		// === 2. 获取当前评论数量 ===
-		currentCount := getCommentCount(page)
+		currentCount := getCommentCount_browser(page)
 		logrus.Infof("当前评论数: %d", currentCount)
 
 		if currentCount != lastCommentCount {
@@ -311,7 +323,7 @@ func findCommentElement(page *rod.Page, commentID, userID string) (*rod.Element,
 			logrus.Infof("滚动到最后一个评论（共 %d 条）", currentCount)
 
 			// 使用 Go 获取所有评论元素
-			elements, err := page.Timeout(2 * time.Second).Elements(".parent-comment, .comment-item, .comment")
+			elements, err := page.WithTimeout(2 * time.Second).Elements(".parent-comment, .comment-item, .comment")
 			if err == nil && len(elements) > 0 {
 				// 滚动到最后一个评论
 				lastComment := elements[len(elements)-1]
@@ -340,7 +352,7 @@ func findCommentElement(page *rod.Page, commentID, userID string) (*rod.Element,
 			logrus.Infof("尝试通过 commentID 查找: %s", selector)
 
 			// 使用 Timeout 避免长时间等待
-			el, err := page.Timeout(2 * time.Second).Element(selector)
+			el, err := page.WithTimeout(2 * time.Second).Element(selector)
 			if err == nil && el != nil {
 				logrus.Infof("✓ 通过 commentID 找到评论: %s (尝试 %d 次)", commentID, attempt+1)
 				return el, nil
@@ -353,12 +365,12 @@ func findCommentElement(page *rod.Page, commentID, userID string) (*rod.Element,
 			logrus.Infof("尝试通过 userID 查找: %s", userID)
 
 			// 使用 Timeout 避免长时间等待
-			elements, err := page.Timeout(2 * time.Second).Elements(".comment-item, .comment, .parent-comment")
+			elements, err := page.WithTimeout(2 * time.Second).Elements(".comment-item, .comment, .parent-comment")
 			if err == nil && len(elements) > 0 {
 				logrus.Infof("找到 %d 个评论元素", len(elements))
 				for i, el := range elements {
 					// 快速检查，不等待
-					userEl, err := el.Timeout(500 * time.Millisecond).Element(fmt.Sprintf(`[data-user-id="%s"]`, userID))
+					userEl, err := el.Element(fmt.Sprintf(`[data-user-id="%s"]`, userID))
 					if err == nil && userEl != nil {
 						logrus.Infof("✓ 通过 userID 在第 %d 个元素中找到评论: %s (尝试 %d 次)", i+1, userID, attempt+1)
 						return el, nil
@@ -380,7 +392,7 @@ func findCommentElement(page *rod.Page, commentID, userID string) (*rod.Element,
 }
 
 // findInputFallback 传统方式查找输入框
-func (f *CommentFeedAction) findInputFallback(page *rod.Page) (*rod.Element, error) {
+func (f *CommentFeedAction) findInputFallback(page browser.Page) (browser.Element, error) {
 	selectors := []string{
 		"#content-textarea",
 		"p.content-input[contenteditable]",
@@ -390,7 +402,7 @@ func (f *CommentFeedAction) findInputFallback(page *rod.Page) (*rod.Element, err
 	}
 
 	for _, sel := range selectors {
-		elem, err := page.Timeout(3 * time.Second).Element(sel)
+		elem, err := page.WithTimeout(3 * time.Second).Element(sel)
 		if err == nil && elem != nil {
 			logrus.Infof("找到输入框（传统方式）: %s", sel)
 			return elem, nil
@@ -401,7 +413,7 @@ func (f *CommentFeedAction) findInputFallback(page *rod.Page) (*rod.Element, err
 }
 
 // findSubmitButtonFallback 传统方式查找提交按钮
-func (f *CommentFeedAction) findSubmitButtonFallback(page *rod.Page) (*rod.Element, error) {
+func (f *CommentFeedAction) findSubmitButtonFallback(page browser.Page) (browser.Element, error) {
 	selectors := []string{
 		"button.submit",
 		"div.bottom button.submit",
@@ -410,7 +422,7 @@ func (f *CommentFeedAction) findSubmitButtonFallback(page *rod.Page) (*rod.Eleme
 	}
 
 	for _, sel := range selectors {
-		elem, err := page.Timeout(3 * time.Second).Element(sel)
+		elem, err := page.WithTimeout(3 * time.Second).Element(sel)
 		if err == nil && elem != nil {
 			logrus.Infof("找到提交按钮（传统方式）: %s", sel)
 			return elem, nil
@@ -430,4 +442,79 @@ func (f *CommentFeedAction) findSubmitButtonFallback(page *rod.Page) (*rod.Eleme
 	}
 
 	return nil, fmt.Errorf("所有传统选择器都失败")
+}
+
+// makeFeedDetailURL_browser 构造 Feed 详情页 URL (browser 版本)
+func makeFeedDetailURL_browser(feedID, xsecToken string) string {
+	return fmt.Sprintf("https://www.xiaohongshu.com/explore/%s?xsec_token=%s&xsec_source=pc_feed", feedID, xsecToken)
+}
+
+// checkPageAccessible_browser 检查页面是否可访问 (browser 版本)
+func checkPageAccessible_browser(page browser.Page) error {
+	time.Sleep(500 * time.Millisecond)
+
+	// 查找错误提示容器
+	has, err := page.Has(".access-wrapper, .error-wrapper, .not-found-wrapper, .blocked-wrapper")
+	if err != nil || !has {
+		// 未找到错误容器，说明页面可访问
+		return nil
+	}
+
+	// 获取文本内容
+	text, err := page.Text(".access-wrapper, .error-wrapper, .not-found-wrapper, .blocked-wrapper")
+	if err != nil {
+		// 无法获取文本，假设页面可访问
+		return nil
+	}
+
+	// 检查是否包含错误关键词
+	if text == "" {
+		return nil
+	}
+
+	logrus.Warnf("页面不可访问: %s", text)
+	return fmt.Errorf("页面不可访问: %s", text)
+}
+
+// scrollToCommentsArea_browser 滚动到评论区 (browser 版本)
+func scrollToCommentsArea_browser(page browser.Page) {
+	logrus.Info("滚动到评论区...")
+
+	// 先定位到评论区
+	has, _ := page.Has(".comments-container")
+	if has {
+		_ = page.ScrollIntoView(".comments-container")
+	}
+	// 等待滚动完成
+	time.Sleep(500 * time.Millisecond)
+
+	// 触发一次小滚动，激活懒加载机制
+	_ = page.ScrollBy(0, 100)
+}
+
+// getCommentCount_browser 获取当前评论数量 (browser 版本)
+func getCommentCount_browser(page browser.Page) int {
+	elements, err := page.WithTimeout(2 * time.Second).Elements(".parent-comment")
+	if err != nil {
+		return 0
+	}
+	return len(elements)
+}
+
+// checkEndContainer_browser 检查是否到达评论底部 (browser 版本)
+func checkEndContainer_browser(page browser.Page) bool {
+	// 查找结束容器
+	has, err := page.WithTimeout(2 * time.Second).Has(".end-container")
+	if err != nil || !has {
+		return false
+	}
+
+	// 获取文本内容
+	text, err := page.Text(".end-container")
+	if err != nil {
+		return false
+	}
+
+	// 检查文本是否表示已到底部
+	return text == "没有更多了" || text == "已经到底了"
 }

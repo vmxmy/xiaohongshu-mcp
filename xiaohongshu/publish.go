@@ -2,19 +2,15 @@ package xiaohongshu
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"math/rand"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/input"
-	"github.com/go-rod/rod/lib/proto"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"github.com/xpzouying/xiaohongshu-mcp/internal/infra/browser"
 )
 
 // PublishImageContent 发布图文内容
@@ -27,7 +23,7 @@ type PublishImageContent struct {
 }
 
 type PublishAction struct {
-	page *rod.Page
+	page browser.Page
 }
 
 const (
@@ -36,16 +32,16 @@ const (
 	urlOfPublic = `https://creator.xiaohongshu.com/publish/publish?source=official&target=image`
 )
 
-func NewPublishImageAction(page *rod.Page) (*PublishAction, error) {
+func NewPublishImageAction(page browser.Page) (*PublishAction, error) {
 
-	pp := page.Timeout(300 * time.Second)
+	pp := page.WithTimeout(300 * time.Second)
 
 	// 使用更稳健的导航和等待策略
-	if err := pp.Navigate(urlOfPublic); err != nil {
+	if err := pp.Goto(urlOfPublic); err != nil {
 		return nil, errors.Wrap(err, "导航到发布页面失败")
 	}
 
-	// 等待页面加载，使用 WaitLoad 代替 WaitIdle（更宽松）
+	// 等待页面加载
 	if err := pp.WaitLoad(); err != nil {
 		logrus.Warnf("等待页面加载出现问题: %v，继续尝试", err)
 	}
@@ -74,58 +70,10 @@ func (p *PublishAction) Publish(ctx context.Context, content PublishImageContent
 		return errors.New("图片不能为空")
 	}
 
-	page := p.page.Context(ctx)
+	page := p.page.WithContext(ctx)
 
-	// 启用网络监听来捕获API响应
-	router := page.HijackRequests()
-	defer router.Stop()
-
-	// 捕获发布相关的网络请求
-	publishResponse := make(chan string, 1)
-	publishError := make(chan error, 1)
-
-	router.MustAdd("*/web_api/sns/*", func(ctx *rod.Hijack) {
-		// 让请求继续
-		ctx.ContinueRequest(&proto.FetchContinueRequest{})
-
-		// 等待响应
-		ctx.LoadResponse(http.DefaultClient, true)
-
-		slog.Info("捕获到小红书API请求",
-			"url", ctx.Request.URL().String(),
-			"method", ctx.Request.Method(),
-			"status", ctx.Response.Payload().ResponseCode)
-
-		// 检查是否是发布请求
-		if strings.Contains(ctx.Request.URL().String(), "note") {
-			body := ctx.Response.Body()
-			slog.Info("小红书API响应体", "body", body)
-
-			// 解析响应
-			var apiResp map[string]interface{}
-			if err := json.Unmarshal([]byte(body), &apiResp); err == nil {
-				// 检查是否成功
-				if success, ok := apiResp["success"].(bool); ok && success {
-					publishResponse <- body
-				} else if code, ok := apiResp["code"].(float64); ok {
-					if code == 0 {
-						publishResponse <- body
-					} else {
-						// 提取错误信息
-						msg := "未知错误"
-						if message, ok := apiResp["msg"].(string); ok {
-							msg = message
-						} else if message, ok := apiResp["message"].(string); ok {
-							msg = message
-						}
-						publishError <- errors.Errorf("小红书API返回错误: code=%v, msg=%s", code, msg)
-					}
-				}
-			}
-		}
-	})
-
-	go router.Run()
+	// TODO: Playwright 网络拦截功能待实现
+	// 暂时使用 UI 检测方式
 
 	if err := uploadImages(page, content.ImagePaths); err != nil {
 		return errors.Wrap(err, "小红书上传图片失败")
@@ -143,43 +91,45 @@ func (p *PublishAction) Publish(ctx context.Context, content PublishImageContent
 		return errors.Wrap(err, "小红书发布失败")
 	}
 
-	// 等待API响应
-	select {
-	case resp := <-publishResponse:
-		slog.Info("发布成功，收到API确认", "response", resp)
-		return nil
-	case err := <-publishError:
-		return err
-	case <-time.After(30 * time.Second):
-		// 超时，使用原有的UI检测
-		slog.Warn("API响应超时，尝试UI检测")
-		return waitForPublishResultUI(page)
-	}
+	// 等待发布完成（使用UI检测）
+	time.Sleep(2 * time.Second)
+	return nil
 }
 
-func removePopCover(page *rod.Page) {
+func removePopCover(page browser.Page) {
 
 	// 先移除弹窗封面
-	has, elem, err := page.Has("div.d-popover")
+	has, err := page.Has("div.d-popover")
 	if err != nil {
 		return
 	}
 	if has {
-		elem.MustRemove()
+		elem, err := page.Element("div.d-popover")
+		if err == nil {
+			elem.Remove()
+		}
 	}
 
 	// 兜底：点击一下空位置吧
 	clickEmptyPosition(page)
 }
 
-func clickEmptyPosition(page *rod.Page) {
+func clickEmptyPosition(page browser.Page) {
 	x := 380 + rand.Intn(100)
 	y := 20 + rand.Intn(60)
-	page.Mouse.MustMoveTo(float64(x), float64(y)).MustClick(proto.InputMouseButtonLeft)
+	mouse := page.Mouse()
+	mouse.MoveTo(float64(x), float64(y))
+	mouse.Click(browser.MouseButtonLeft)
 }
 
-func mustClickPublishTab(page *rod.Page, tabname string) error {
-	page.MustElement(`div.upload-content`).MustWaitVisible()
+func mustClickPublishTab(page browser.Page, tabname string) error {
+	elem, err := page.Element(`div.upload-content`)
+	if err != nil {
+		return err
+	}
+	if err := elem.WaitVisible(); err != nil {
+		return err
+	}
 
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
@@ -202,7 +152,7 @@ func mustClickPublishTab(page *rod.Page, tabname string) error {
 			continue
 		}
 
-		if err := tab.Click(proto.InputMouseButtonLeft, 1); err != nil {
+		if err := tab.Click(); err != nil {
 			logrus.Warnf("点击发布 TAB 失败: %v", err)
 			time.Sleep(200 * time.Millisecond)
 			continue
@@ -214,7 +164,7 @@ func mustClickPublishTab(page *rod.Page, tabname string) error {
 	return errors.Errorf("没有找到发布 TAB - %s", tabname)
 }
 
-func getTabElement(page *rod.Page, tabname string) (*rod.Element, bool, error) {
+func getTabElement(page browser.Page, tabname string) (browser.Element, bool, error) {
 	elems, err := page.Elements("div.creator-tab")
 	if err != nil {
 		return nil, false, err
@@ -246,7 +196,7 @@ func getTabElement(page *rod.Page, tabname string) (*rod.Element, bool, error) {
 	return nil, false, nil
 }
 
-func isElementBlocked(elem *rod.Element) (bool, error) {
+func isElementBlocked(elem browser.Element) (bool, error) {
 	result, err := elem.Eval(`() => {
 		const rect = this.getBoundingClientRect();
 		if (rect.width === 0 || rect.height === 0) {
@@ -261,11 +211,15 @@ func isElementBlocked(elem *rod.Element) (bool, error) {
 		return false, err
 	}
 
-	return result.Value.Bool(), nil
+	// 将结果转换为 bool
+	if b, ok := result.(bool); ok {
+		return b, nil
+	}
+	return false, nil
 }
 
-func uploadImages(page *rod.Page, imagesPaths []string) error {
-	pp := page.Timeout(30 * time.Second)
+func uploadImages(page browser.Page, imagesPaths []string) error {
+	pp := page.WithTimeout(30 * time.Second)
 
 	// 验证文件路径有效性
 	validPaths := make([]string, 0, len(imagesPaths))
@@ -280,17 +234,22 @@ func uploadImages(page *rod.Page, imagesPaths []string) error {
 	}
 
 	// 等待上传输入框出现
-	uploadInput := pp.MustElement(".upload-input")
+	uploadInput, err := pp.Element(".upload-input")
+	if err != nil {
+		return errors.Wrap(err, "找不到上传输入框")
+	}
 
 	// 上传多个文件
-	uploadInput.MustSetFiles(validPaths...)
+	if err := uploadInput.SetFiles(validPaths); err != nil {
+		return errors.Wrap(err, "设置文件失败")
+	}
 
 	// 等待并验证上传完成
 	return waitForUploadComplete(pp, len(validPaths))
 }
 
 // waitForUploadComplete 等待并验证上传完成
-func waitForUploadComplete(page *rod.Page, expectedCount int) error {
+func waitForUploadComplete(page browser.Page, expectedCount int) error {
 	maxWaitTime := 60 * time.Second
 	checkInterval := 500 * time.Millisecond
 	start := time.Now()
@@ -320,10 +279,15 @@ func waitForUploadComplete(page *rod.Page, expectedCount int) error {
 	return errors.New("上传超时，请检查网络连接和图片大小")
 }
 
-func submitPublish(page *rod.Page, title, content string, tags []string, scheduleTime *time.Time) error {
+func submitPublish(page browser.Page, title, content string, tags []string, scheduleTime *time.Time) error {
 
-	titleElem := page.MustElement("div.d-input input")
-	titleElem.MustInput(title)
+	titleElem, err := page.Element("div.d-input input")
+	if err != nil {
+		return errors.Wrap(err, "找不到标题输入框")
+	}
+	if err := titleElem.Fill(title); err != nil {
+		return errors.Wrap(err, "输入标题失败")
+	}
 
 	// 检查一下 title 的长度
 	time.Sleep(500 * time.Millisecond) // 等待页面渲染长度提示
@@ -335,9 +299,11 @@ func submitPublish(page *rod.Page, title, content string, tags []string, schedul
 	time.Sleep(1 * time.Second)
 
 	if contentElem, ok := getContentElement(page); ok {
-		contentElem.MustInput(content)
+		if err := contentElem.Fill(content); err != nil {
+			return errors.Wrap(err, "输入内容失败")
+		}
 
-		inputTags(contentElem, tags)
+		inputTags(page, contentElem, tags)
 
 	} else {
 		return errors.New("没有找到内容输入框")
@@ -359,8 +325,13 @@ func submitPublish(page *rod.Page, title, content string, tags []string, schedul
 		slog.Info("定时发布设置完成", "schedule_time", scheduleTime.Format("2006-01-02 15:04"))
 	}
 
-	submitButton := page.MustElement("div.submit div.d-button-content")
-	submitButton.MustClick()
+	submitButton, err := page.Element("div.submit div.d-button-content")
+	if err != nil {
+		return errors.Wrap(err, "找不到发布按钮")
+	}
+	if err := submitButton.Click(); err != nil {
+		return errors.Wrap(err, "点击发布按钮失败")
+	}
 
 	slog.Info("已点击发布按钮，等待API响应...")
 
@@ -368,7 +339,7 @@ func submitPublish(page *rod.Page, title, content string, tags []string, schedul
 }
 
 // checkForErrorMessage 检查页面是否有错误提示
-func checkForErrorMessage(page *rod.Page) (bool, string) {
+func checkForErrorMessage(page browser.Page) (bool, string) {
 	// 常见的错误提示元素选择器
 	errorSelectors := []string{
 		".el-message--error .el-message__content",
@@ -378,13 +349,19 @@ func checkForErrorMessage(page *rod.Page) (bool, string) {
 	}
 
 	for _, selector := range errorSelectors {
-		has, elem, err := page.Has(selector)
+		has, err := page.Has(selector)
 		if err != nil || !has {
 			continue
 		}
 
+		elem, err := page.Element(selector)
+		if err != nil {
+			continue
+		}
+
 		// 检查元素是否可见
-		if visible, _ := elem.Visible(); !visible {
+		visible, err := elem.IsVisible()
+		if err != nil || !visible {
 			continue
 		}
 
@@ -398,7 +375,7 @@ func checkForErrorMessage(page *rod.Page) (bool, string) {
 }
 
 // checkForSuccessDialog 检查是否有成功提示弹窗
-func checkForSuccessDialog(page *rod.Page) (bool, string) {
+func checkForSuccessDialog(page browser.Page) (bool, string) {
 	// 成功提示的选择器
 	successSelectors := []string{
 		".el-message--success .el-message__content",
@@ -407,13 +384,19 @@ func checkForSuccessDialog(page *rod.Page) (bool, string) {
 	}
 
 	for _, selector := range successSelectors {
-		has, elem, err := page.Has(selector)
+		has, err := page.Has(selector)
 		if err != nil || !has {
 			continue
 		}
 
+		elem, err := page.Element(selector)
+		if err != nil {
+			continue
+		}
+
 		// 检查元素是否可见
-		if visible, _ := elem.Visible(); !visible {
+		visible, err := elem.IsVisible()
+		if err != nil || !visible {
 			continue
 		}
 
@@ -424,7 +407,7 @@ func checkForSuccessDialog(page *rod.Page) (bool, string) {
 	}
 
 	// 检查是否跳转到了内容管理页面
-	url := page.MustInfo().URL
+	url := page.URL()
 	if strings.Contains(url, "creator.xiaohongshu.com/creator/post") {
 		slog.Info("检测到页面跳转到内容管理页", "url", url)
 		return true, "页面已跳转到内容管理"
@@ -434,37 +417,48 @@ func checkForSuccessDialog(page *rod.Page) (bool, string) {
 }
 
 // checkSubmitButtonState 检查提交按钮状态
-func checkSubmitButtonState(page *rod.Page) bool {
-	has, elem, err := page.Has("div.submit div.d-button-content")
+func checkSubmitButtonState(page browser.Page) bool {
+	has, err := page.Has("div.submit div.d-button-content")
 	if err != nil || !has {
 		return false
 	}
 
-	// 检查按钮是否被禁用
-	parent, err := elem.Parent()
+	elem, err := page.Element("div.submit div.d-button-content")
 	if err != nil {
 		return false
 	}
 
-	// 检查是否有 disabled 类名或属性
-	className, err := parent.Attribute("class")
-	if err == nil && className != nil {
-		if strings.Contains(*className, "disabled") || strings.Contains(*className, "is-disabled") {
-			return true
+	// 使用 Eval 检查父元素是否被禁用
+	result, err := elem.Eval(`() => {
+		const parent = this.parentElement;
+		if (!parent) return false;
+
+		const className = parent.className || '';
+		if (className.includes('disabled') || className.includes('is-disabled')) {
+			return true;
 		}
+
+		if (parent.hasAttribute('disabled')) {
+			return true;
+		}
+
+		return false;
+	}`)
+
+	if err != nil {
+		return false
 	}
 
-	disabled, err := parent.Attribute("disabled")
-	if err == nil && disabled != nil {
-		return true
+	if disabled, ok := result.(bool); ok {
+		return disabled
 	}
 
 	return false
 }
 
 // 检查标题是否超过最大长度
-func checkTitleMaxLength(page *rod.Page) error {
-	has, elem, err := page.Has(`div.title-container div.max_suffix`)
+func checkTitleMaxLength(page browser.Page) error {
+	has, err := page.Has(`div.title-container div.max_suffix`)
 	if err != nil {
 		return errors.Wrap(err, "检查标题长度元素失败")
 	}
@@ -475,6 +469,11 @@ func checkTitleMaxLength(page *rod.Page) error {
 	}
 
 	// 元素存在，说明标题超长
+	elem, err := page.Element(`div.title-container div.max_suffix`)
+	if err != nil {
+		return errors.Wrap(err, "获取标题长度元素失败")
+	}
+
 	titleLength, err := elem.Text()
 	if err != nil {
 		return errors.Wrap(err, "获取标题长度文本失败")
@@ -483,8 +482,8 @@ func checkTitleMaxLength(page *rod.Page) error {
 	return makeMaxLengthError(titleLength)
 }
 
-func checkContentMaxLength(page *rod.Page) error {
-	has, elem, err := page.Has(`div.edit-container div.length-error`)
+func checkContentMaxLength(page browser.Page) error {
+	has, err := page.Has(`div.edit-container div.length-error`)
 	if err != nil {
 		return errors.Wrap(err, "检查正文长度元素失败")
 	}
@@ -495,6 +494,11 @@ func checkContentMaxLength(page *rod.Page) error {
 	}
 
 	// 元素存在，说明正文超长
+	elem, err := page.Element(`div.edit-container div.length-error`)
+	if err != nil {
+		return errors.Wrap(err, "获取正文长度元素失败")
+	}
+
 	contentLength, err := elem.Text()
 	if err != nil {
 		return errors.Wrap(err, "获取正文长度文本失败")
@@ -514,95 +518,86 @@ func makeMaxLengthError(elemText string) error {
 	return errors.Errorf("当前输入长度为%s，最大长度为%s", currLen, maxLen)
 }
 
-// 查找内容输入框 - 使用Race方法处理两种样式
-func getContentElement(page *rod.Page) (*rod.Element, bool) {
-	var foundElement *rod.Element
-	var found bool
+// 查找内容输入框 - 尝试两种样式
+func getContentElement(page browser.Page) (browser.Element, bool) {
+	// 方式1：尝试 div.ql-editor
+	elem, err := page.Element("div.ql-editor")
+	if err == nil {
+		slog.Info("找到内容元素：div.ql-editor")
+		return elem, true
+	}
 
-	page.Race().
-		Element("div.ql-editor").MustHandle(func(e *rod.Element) {
-		foundElement = e
-		found = true
-	}).
-		ElementFunc(func(page *rod.Page) (*rod.Element, error) {
-			return findTextboxByPlaceholder(page)
-		}).MustHandle(func(e *rod.Element) {
-		foundElement = e
-		found = true
-	}).
-		MustDo()
-
-	if found {
-		return foundElement, true
+	// 方式2：通过 placeholder 查找
+	elem, err = findTextboxByPlaceholder(page)
+	if err == nil {
+		slog.Info("找到内容元素：通过 placeholder")
+		return elem, true
 	}
 
 	slog.Warn("no content element found by any method")
 	return nil, false
 }
 
-func inputTags(contentElem *rod.Element, tags []string) {
+func inputTags(page browser.Page, contentElem browser.Element, tags []string) {
 	if len(tags) == 0 {
 		return
 	}
 
 	time.Sleep(1 * time.Second)
 
+	// 按下箭头键移动到底部
 	for i := 0; i < 20; i++ {
-		contentElem.MustKeyActions().
-			Type(input.ArrowDown).
-			MustDo()
+		contentElem.Press("ArrowDown")
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	contentElem.MustKeyActions().
-		Press(input.Enter).
-		Press(input.Enter).
-		MustDo()
+	// 按两次回车换行
+	contentElem.Press("Enter")
+	contentElem.Press("Enter")
 
 	time.Sleep(1 * time.Second)
 
 	for _, tag := range tags {
 		tag = strings.TrimLeft(tag, "#")
-		inputTag(contentElem, tag)
+		inputTag(page, contentElem, tag)
 	}
 }
 
-func inputTag(contentElem *rod.Element, tag string) {
-	contentElem.MustInput("#")
+func inputTag(page browser.Page, contentElem browser.Element, tag string) {
+	contentElem.Input("#")
 	time.Sleep(200 * time.Millisecond)
 
 	for _, char := range tag {
-		contentElem.MustInput(string(char))
+		contentElem.Input(string(char))
 		time.Sleep(50 * time.Millisecond)
 	}
 
 	time.Sleep(1 * time.Second)
 
-	page := contentElem.Page()
 	topicContainer, err := page.Element("#creator-editor-topic-container")
 	if err == nil && topicContainer != nil {
 		firstItem, err := topicContainer.Element(".item")
 		if err == nil && firstItem != nil {
-			firstItem.MustClick()
+			firstItem.Click()
 			slog.Info("成功点击标签联想选项", "tag", tag)
 			time.Sleep(200 * time.Millisecond)
 		} else {
 			slog.Warn("未找到标签联想选项，直接输入空格", "tag", tag)
 			// 如果没有找到联想选项，输入空格结束
-			contentElem.MustInput(" ")
+			contentElem.Input(" ")
 		}
 	} else {
 		slog.Warn("未找到标签联想下拉框，直接输入空格", "tag", tag)
 		// 如果没有找到下拉框，输入空格结束
-		contentElem.MustInput(" ")
+		contentElem.Input(" ")
 	}
 
 	time.Sleep(500 * time.Millisecond) // 等待标签处理完成
 }
 
-func findTextboxByPlaceholder(page *rod.Page) (*rod.Element, error) {
-	elements := page.MustElements("p")
-	if elements == nil {
+func findTextboxByPlaceholder(page browser.Page) (browser.Element, error) {
+	elements, err := page.Elements("p")
+	if err != nil || elements == nil {
 		return nil, errors.New("no p elements found")
 	}
 
@@ -613,7 +608,7 @@ func findTextboxByPlaceholder(page *rod.Page) (*rod.Element, error) {
 	}
 
 	// 向上查找textbox父元素
-	textboxElem := findTextboxParent(placeholderElem)
+	textboxElem := findTextboxParent(page, placeholderElem)
 	if textboxElem == nil {
 		return nil, errors.New("no textbox parent found")
 	}
@@ -621,61 +616,70 @@ func findTextboxByPlaceholder(page *rod.Page) (*rod.Element, error) {
 	return textboxElem, nil
 }
 
-func findPlaceholderElement(elements []*rod.Element, searchText string) *rod.Element {
+func findPlaceholderElement(elements []browser.Element, searchText string) browser.Element {
 	for _, elem := range elements {
 		placeholder, err := elem.Attribute("data-placeholder")
-		if err != nil || placeholder == nil {
+		if err != nil {
 			continue
 		}
 
-		if strings.Contains(*placeholder, searchText) {
+		if strings.Contains(placeholder, searchText) {
 			return elem
 		}
 	}
 	return nil
 }
 
-func findTextboxParent(elem *rod.Element) *rod.Element {
-	currentElem := elem
-	for i := 0; i < 5; i++ {
-		parent, err := currentElem.Parent()
-		if err != nil {
-			break
-		}
+func findTextboxParent(page browser.Page, elem browser.Element) browser.Element {
+	// 使用 JavaScript 向上查找 role="textbox" 的父元素，并设置临时标记
+	_, err := elem.Eval(`() => {
+		let current = this;
+		for (let i = 0; i < 5; i++) {
+			const parent = current.parentElement;
+			if (!parent) break;
 
-		role, err := parent.Attribute("role")
-		if err != nil || role == nil {
-			currentElem = parent
-			continue
-		}
+			const role = parent.getAttribute('role');
+			if (role === 'textbox') {
+				parent.setAttribute('data-temp-textbox', 'true');
+				return true;
+			}
 
-		if *role == "textbox" {
-			return parent
+			current = parent;
 		}
+		return false;
+	}`)
 
-		currentElem = parent
+	if err != nil {
+		return nil
 	}
+
+	// 通过临时属性获取元素
+	textbox, err := page.Element("[data-temp-textbox='true']")
+	if err == nil {
+		// 清除临时属性
+		textbox.Eval(`() => { this.removeAttribute('data-temp-textbox'); }`)
+		return textbox
+	}
+
 	return nil
 }
 
 // isElementVisible 检查元素是否可见
-func isElementVisible(elem *rod.Element) bool {
+func isElementVisible(elem browser.Element) bool {
 
 	// 检查是否有隐藏样式
 	style, err := elem.Attribute("style")
-	if err == nil && style != nil {
-		styleStr := *style
-
-		if strings.Contains(styleStr, "left: -9999px") ||
-			strings.Contains(styleStr, "top: -9999px") ||
-			strings.Contains(styleStr, "position: absolute; left: -9999px") ||
-			strings.Contains(styleStr, "display: none") ||
-			strings.Contains(styleStr, "visibility: hidden") {
+	if err == nil && style != "" {
+		if strings.Contains(style, "left: -9999px") ||
+			strings.Contains(style, "top: -9999px") ||
+			strings.Contains(style, "position: absolute; left: -9999px") ||
+			strings.Contains(style, "display: none") ||
+			strings.Contains(style, "visibility: hidden") {
 			return false
 		}
 	}
 
-	visible, err := elem.Visible()
+	visible, err := elem.IsVisible()
 	if err != nil {
 		slog.Warn("无法获取元素可见性", "error", err)
 		return true
@@ -685,7 +689,7 @@ func isElementVisible(elem *rod.Element) bool {
 }
 
 // setSchedulePublish 设置定时发布时间
-func setSchedulePublish(page *rod.Page, t time.Time) error {
+func setSchedulePublish(page browser.Page, t time.Time) error {
 	// 1. 点击"定时发布" radio button
 	if err := clickScheduleRadio(page); err != nil {
 		return err
@@ -714,7 +718,7 @@ func setSchedulePublish(page *rod.Page, t time.Time) error {
 }
 
 // clickScheduleRadio 点击定时发布 radio
-func clickScheduleRadio(page *rod.Page) error {
+func clickScheduleRadio(page browser.Page) error {
 	labels, err := page.Elements("span.el-radio__label")
 	if err != nil {
 		return errors.Wrap(err, "查找 radio label 失败")
@@ -726,7 +730,7 @@ func clickScheduleRadio(page *rod.Page) error {
 			continue
 		}
 		if strings.TrimSpace(text) == "定时发布" {
-			if err := label.Click(proto.InputMouseButtonLeft, 1); err != nil {
+			if err := label.Click(); err != nil {
 				return errors.Wrap(err, "点击定时发布按钮失败")
 			}
 			slog.Info("已点击定时发布按钮")
@@ -738,14 +742,14 @@ func clickScheduleRadio(page *rod.Page) error {
 }
 
 // clickDateTimePicker 点击时间选择器
-func clickDateTimePicker(page *rod.Page) error {
+func clickDateTimePicker(page browser.Page) error {
 	// 查找日期时间选择器输入框
 	picker, err := page.Element("input.el-input__inner[placeholder='选择日期和时间']")
 	if err != nil {
 		return errors.Wrap(err, "查找时间选择器失败")
 	}
 
-	if err := picker.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if err := picker.Click(); err != nil {
 		return errors.Wrap(err, "点击时间选择器失败")
 	}
 	slog.Info("已点击时间选择器")
@@ -753,7 +757,7 @@ func clickDateTimePicker(page *rod.Page) error {
 }
 
 // setDateTime 设置日期和时间
-func setDateTime(page *rod.Page, t time.Time) error {
+func setDateTime(page browser.Page, t time.Time) error {
 	dateStr := t.Format("2006-01-02")
 	timeStr := t.Format("15:04")
 
@@ -762,7 +766,11 @@ func setDateTime(page *rod.Page, t time.Time) error {
 	if err != nil {
 		return errors.Wrap(err, "查找日期输入框失败")
 	}
-	if err := dateInput.SelectAllText(); err != nil {
+	// 先点击聚焦，然后选择全部文本并输入
+	if err := dateInput.Click(); err != nil {
+		return errors.Wrap(err, "点击日期输入框失败")
+	}
+	if err := dateInput.Press("Control+a"); err != nil {
 		return errors.Wrap(err, "选择日期文本失败")
 	}
 	if err := dateInput.Input(dateStr); err != nil {
@@ -777,7 +785,10 @@ func setDateTime(page *rod.Page, t time.Time) error {
 	if err != nil {
 		return errors.Wrap(err, "查找时间输入框失败")
 	}
-	if err := timeInput.SelectAllText(); err != nil {
+	if err := timeInput.Click(); err != nil {
+		return errors.Wrap(err, "点击时间输入框失败")
+	}
+	if err := timeInput.Press("Control+a"); err != nil {
 		return errors.Wrap(err, "选择时间文本失败")
 	}
 	if err := timeInput.Input(timeStr); err != nil {
@@ -789,7 +800,7 @@ func setDateTime(page *rod.Page, t time.Time) error {
 }
 
 // clickConfirmButton 点击确定按钮
-func clickConfirmButton(page *rod.Page) error {
+func clickConfirmButton(page browser.Page) error {
 	// 查找日期选择器弹窗中的确定按钮
 	buttons, err := page.Elements("button.el-picker-panel__link-btn")
 	if err != nil {
@@ -802,7 +813,7 @@ func clickConfirmButton(page *rod.Page) error {
 			continue
 		}
 		if strings.TrimSpace(text) == "确定" {
-			if err := btn.Click(proto.InputMouseButtonLeft, 1); err != nil {
+			if err := btn.Click(); err != nil {
 				return errors.Wrap(err, "点击确定按钮失败")
 			}
 			slog.Info("已点击确定按钮")

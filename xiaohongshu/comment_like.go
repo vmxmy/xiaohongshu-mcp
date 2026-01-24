@@ -5,18 +5,17 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/proto"
 	"github.com/sirupsen/logrus"
+	"github.com/xpzouying/xiaohongshu-mcp/internal/infra/browser"
 )
 
 // CommentLikeAction 评论点赞操作
 type CommentLikeAction struct {
-	page *rod.Page
+	page browser.Page
 }
 
 // NewCommentLikeAction 创建评论点赞操作实例
-func NewCommentLikeAction(page *rod.Page) *CommentLikeAction {
+func NewCommentLikeAction(page browser.Page) *CommentLikeAction {
 	return &CommentLikeAction{page: page}
 }
 
@@ -32,7 +31,7 @@ func (c *CommentLikeAction) UnlikeComment(ctx context.Context, feedID, xsecToken
 
 // perform 执行点赞/取消点赞操作
 func (c *CommentLikeAction) perform(ctx context.Context, feedID, xsecToken, commentID, userID string, targetLiked bool) error {
-	page := c.page.Context(ctx).Timeout(5 * time.Minute)
+	page := c.page.WithContext(ctx).WithTimeout(5 * time.Minute)
 
 	url := makeFeedDetailURL(feedID, xsecToken)
 	actionName := "点赞评论"
@@ -43,8 +42,12 @@ func (c *CommentLikeAction) perform(ctx context.Context, feedID, xsecToken, comm
 	logrus.Infof("打开 feed 详情页进行%s: %s", actionName, url)
 
 	// 导航到详情页
-	page.MustNavigate(url)
-	page.MustWaitDOMStable()
+	if err := page.Goto(url); err != nil {
+		return fmt.Errorf("导航失败: %w", err)
+	}
+	if err := page.WaitDOMStable(5*time.Second, 0.1); err != nil {
+		logrus.Warnf("等待 DOM 稳定失败: %v", err)
+	}
 	time.Sleep(1 * time.Second)
 
 	// 检查页面是否可访问
@@ -63,7 +66,9 @@ func (c *CommentLikeAction) perform(ctx context.Context, feedID, xsecToken, comm
 
 	// 滚动到评论位置
 	logrus.Info("滚动到评论位置...")
-	commentEl.MustScrollIntoView()
+	if err := commentEl.ScrollIntoView(); err != nil {
+		logrus.Warnf("滚动失败: %v", err)
+	}
 	time.Sleep(1 * time.Second)
 
 	// 查找评论的点赞按钮
@@ -90,18 +95,18 @@ func (c *CommentLikeAction) perform(ctx context.Context, feedID, xsecToken, comm
 
 	// 点击点赞按钮
 	logrus.Infof("点击%s按钮...", actionName)
-	if err := likeBtn.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if err := likeBtn.Click(); err != nil {
 		logrus.Warnf("点击失败: %v，尝试使用 JS 点击", err)
 
 		// 备用方案：使用 JavaScript 点击
-		_, err = page.Eval(`(commentEl) => {
+		_, err = commentEl.Eval(`(commentEl) => {
 			const likeBtn = commentEl.querySelector('.like, [class*="like"]');
 			if (likeBtn) {
 				likeBtn.click();
 				return true;
 			}
 			return false;
-		}`, commentEl.Object)
+		}`)
 
 		if err != nil {
 			return fmt.Errorf("无法点击点赞按钮: %w", err)
@@ -127,7 +132,7 @@ func (c *CommentLikeAction) perform(ctx context.Context, feedID, xsecToken, comm
 }
 
 // findCommentLikeButton 查找评论的点赞按钮
-func (c *CommentLikeAction) findCommentLikeButton(commentEl *rod.Element) (*rod.Element, error) {
+func (c *CommentLikeAction) findCommentLikeButton(commentEl browser.Element) (browser.Element, error) {
 	// 尝试多个选择器
 	selectors := []string{
 		".like",
@@ -137,7 +142,7 @@ func (c *CommentLikeAction) findCommentLikeButton(commentEl *rod.Element) (*rod.
 	}
 
 	for _, sel := range selectors {
-		elem, err := commentEl.Timeout(3 * time.Second).Element(sel)
+		elem, err := commentEl.Element(sel)
 		if err == nil && elem != nil {
 			logrus.Infof("找到评论点赞按钮: %s", sel)
 			return elem, nil
@@ -148,11 +153,11 @@ func (c *CommentLikeAction) findCommentLikeButton(commentEl *rod.Element) (*rod.
 }
 
 // getCommentLikeState 获取评论点赞状态
-func (c *CommentLikeAction) getCommentLikeState(likeBtn *rod.Element) (bool, error) {
+func (c *CommentLikeAction) getCommentLikeState(likeBtn browser.Element) (bool, error) {
 	// 方法1: 检查 class 是否包含 active/liked
 	class, err := likeBtn.Attribute("class")
-	if err == nil && class != nil {
-		if contains(*class, "active") || contains(*class, "liked") {
+	if err == nil && class != "" {
+		if contains(class, "active") || contains(class, "liked") {
 			logrus.Info("从 class 判断: 已点赞")
 			return true, nil
 		}

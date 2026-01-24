@@ -7,9 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/proto"
 	"github.com/pkg/errors"
+	"github.com/xpzouying/xiaohongshu-mcp/internal/infra/browser"
 )
 
 // PublishVideoContent 发布视频内容
@@ -21,11 +20,19 @@ type PublishVideoContent struct {
 	ScheduleTime *time.Time // 定时发布时间，nil 表示立即发布
 }
 
-// NewPublishVideoAction 进入发布页并切换到“上传视频”
-func NewPublishVideoAction(page *rod.Page) (*PublishAction, error) {
-	pp := page.Timeout(300 * time.Second)
+// NewPublishVideoAction 进入发布页并切换到"上传视频"
+func NewPublishVideoAction(page browser.Page) (*PublishAction, error) {
+	pp := page.WithTimeout(300 * time.Second)
 
-	pp.MustNavigate(urlOfPublic).MustWaitIdle().MustWaitDOMStable()
+	if err := pp.Goto(urlOfPublic); err != nil {
+		return nil, errors.Wrap(err, "导航到发布页面失败")
+	}
+	if err := pp.WaitLoad(); err != nil {
+		slog.Warn("等待页面加载出现问题", "error", err)
+	}
+	if err := pp.WaitDOMStable(time.Second, 0.1); err != nil {
+		slog.Warn("等待 DOM 稳定出现问题", "error", err)
+	}
 	time.Sleep(1 * time.Second)
 
 	if err := mustClickPublishTab(page, "上传视频"); err != nil {
@@ -43,7 +50,7 @@ func (p *PublishAction) PublishVideo(ctx context.Context, content PublishVideoCo
 		return errors.New("视频不能为空")
 	}
 
-	page := p.page.Context(ctx)
+	page := p.page.WithContext(ctx)
 
 	if err := uploadVideo(page, content.VideoPath); err != nil {
 		return errors.Wrap(err, "小红书上传视频失败")
@@ -56,25 +63,27 @@ func (p *PublishAction) PublishVideo(ctx context.Context, content PublishVideoCo
 }
 
 // uploadVideo 上传单个本地视频
-func uploadVideo(page *rod.Page, videoPath string) error {
-	pp := page.Timeout(5 * time.Minute) // 视频处理耗时更长
+func uploadVideo(page browser.Page, videoPath string) error {
+	pp := page.WithTimeout(5 * time.Minute) // 视频处理耗时更长
 
 	if _, err := os.Stat(videoPath); os.IsNotExist(err) {
 		return errors.Wrapf(err, "视频文件不存在: %s", videoPath)
 	}
 
 	// 寻找文件上传输入框（与图文一致的 class，或退回到 input[type=file]）
-	var fileInput *rod.Element
+	var fileInput browser.Element
 	var err error
 	fileInput, err = pp.Element(".upload-input")
-	if err != nil || fileInput == nil {
+	if err != nil {
 		fileInput, err = pp.Element("input[type='file']")
-		if err != nil || fileInput == nil {
+		if err != nil {
 			return errors.New("未找到视频上传输入框")
 		}
 	}
 
-	fileInput.MustSetFiles(videoPath)
+	if err := fileInput.SetFiles([]string{videoPath}); err != nil {
+		return errors.Wrap(err, "设置视频文件失败")
+	}
 
 	// 对于视频，等待发布按钮变为可点击即表示处理完成
 	btn, err := waitForPublishButtonClickable(pp)
@@ -86,7 +95,7 @@ func uploadVideo(page *rod.Page, videoPath string) error {
 }
 
 // waitForPublishButtonClickable 等待发布按钮可点击
-func waitForPublishButtonClickable(page *rod.Page) (*rod.Element, error) {
+func waitForPublishButtonClickable(page browser.Page) (browser.Element, error) {
 	maxWait := 10 * time.Minute
 	interval := 1 * time.Second
 	start := time.Now()
@@ -98,12 +107,14 @@ func waitForPublishButtonClickable(page *rod.Page) (*rod.Element, error) {
 		btn, err := page.Element(selector)
 		if err == nil && btn != nil {
 			// 可见性
-			vis, verr := btn.Visible()
+			vis, verr := btn.IsVisible()
 			if verr == nil && vis {
 				// 检查 disabled 属性
-				if disabled, _ := btn.Attribute("disabled"); disabled == nil {
+				disabled, _ := btn.Attribute("disabled")
+				if disabled == "" {
 					// 再通过 class 名粗略判断不在禁用态
-					if cls, _ := btn.Attribute("class"); cls != nil && !strings.Contains(*cls, "disabled") {
+					cls, _ := btn.Attribute("class")
+					if !strings.Contains(cls, "disabled") {
 						return btn, nil
 					}
 					// 即使 class 包含 disabled，只要没有 disabled 属性，也尝试点击一次以确认
@@ -117,16 +128,23 @@ func waitForPublishButtonClickable(page *rod.Page) (*rod.Element, error) {
 }
 
 // submitPublishVideo 填写标题、正文、标签并点击发布（等待按钮可点击后再提交）
-func submitPublishVideo(page *rod.Page, title, content string, tags []string, scheduleTime *time.Time) error {
+func submitPublishVideo(page browser.Page, title, content string, tags []string, scheduleTime *time.Time) error {
 	// 标题
-	titleElem := page.MustElement("div.d-input input")
-	titleElem.MustInput(title)
+	titleElem, err := page.Element("div.d-input input")
+	if err != nil {
+		return errors.Wrap(err, "找不到标题输入框")
+	}
+	if err := titleElem.Input(title); err != nil {
+		return errors.Wrap(err, "输入标题失败")
+	}
 	time.Sleep(1 * time.Second)
 
 	// 正文 + 标签
 	if contentElem, ok := getContentElement(page); ok {
-		contentElem.MustInput(content)
-		inputTags(contentElem, tags)
+		if err := contentElem.Input(content); err != nil {
+			return errors.Wrap(err, "输入内容失败")
+		}
+		inputTags(page, contentElem, tags)
 	} else {
 		return errors.New("没有找到内容输入框")
 	}
@@ -148,7 +166,7 @@ func submitPublishVideo(page *rod.Page, title, content string, tags []string, sc
 	}
 
 	// 点击发布
-	if err := btn.Click(proto.InputMouseButtonLeft, 1); err != nil {
+	if err := btn.Click(); err != nil {
 		return errors.Wrap(err, "点击发布按钮失败")
 	}
 
