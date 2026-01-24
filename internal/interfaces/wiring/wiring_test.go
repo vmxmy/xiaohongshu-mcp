@@ -9,9 +9,9 @@ import (
 
 type fakeEngine struct{}
 
-func (fakeEngine) Start() error                         { return nil }
-func (fakeEngine) NewPage() (browser.Page, error)       { return nil, nil }
-func (fakeEngine) Close() error                         { return nil }
+func (fakeEngine) Start() error                   { return nil }
+func (fakeEngine) NewPage() (browser.Page, error) { return nil, nil }
+func (fakeEngine) Close() error                   { return nil }
 
 func TestBuildPublishUsecase(t *testing.T) {
 	cfg := &config.Config{}

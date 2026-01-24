@@ -23,11 +23,11 @@ type SelectorConfig struct {
 
 // ElementSelectors 元素选择器集合
 type ElementSelectors struct {
-	Name       string              `yaml:"name"`
-	Primary    []SelectorItem      `yaml:"primary"`
-	Fallback   []SelectorItem      `yaml:"fallback"`
-	TextMatch  []string            `yaml:"text_match"`
-	Validation *ValidationRules    `yaml:"validation"`
+	Name       string           `yaml:"name"`
+	Primary    []SelectorItem   `yaml:"primary"`
+	Fallback   []SelectorItem   `yaml:"fallback"`
+	TextMatch  []string         `yaml:"text_match"`
+	Validation *ValidationRules `yaml:"validation"`
 }
 
 // SelectorItem 单个选择器项
@@ -65,12 +65,12 @@ type SelectorStats struct {
 
 // ElementStats 元素统计
 type ElementStats struct {
-	ElementName    string                  `json:"element_name"`
-	TotalAttempts  int                     `json:"total_attempts"`
-	SuccessCount   int                     `json:"success_count"`
-	SelectorStats  map[string]*UsageStats  `json:"selector_stats"`
-	LastUsed       time.Time               `json:"last_used"`
-	LastSuccessful string                  `json:"last_successful"`
+	ElementName    string                 `json:"element_name"`
+	TotalAttempts  int                    `json:"total_attempts"`
+	SuccessCount   int                    `json:"success_count"`
+	SelectorStats  map[string]*UsageStats `json:"selector_stats"`
+	LastUsed       time.Time              `json:"last_used"`
+	LastSuccessful string                 `json:"last_successful"`
 }
 
 // UsageStats 使用统计
