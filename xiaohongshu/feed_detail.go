@@ -836,7 +836,7 @@ func checkPageAccessible(page browser.Page) error {
 	for _, kw := range keywords {
 		if strings.Contains(text, kw) {
 			logrus.Warnf("笔记不可访问: %s", kw)
-			return fmt.Errorf("笔记不可访问: %s", kw)
+			return errors.NewErrFeedNotAccessible(kw)
 		}
 	}
 
@@ -844,7 +844,7 @@ func checkPageAccessible(page browser.Page) error {
 	trimmedText := strings.TrimSpace(text)
 	if trimmedText != "" {
 		logrus.Warnf("笔记不可访问（未知原因）: %s", trimmedText)
-		return fmt.Errorf("笔记不可访问: %s", trimmedText)
+		return errors.NewErrFeedNotAccessible(trimmedText)
 	}
 
 	return nil

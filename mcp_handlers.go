@@ -12,6 +12,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/xiaohongshu-mcp/cookies"
+	apperrors "github.com/xpzouying/xiaohongshu-mcp/errors"
 	domainpublish "github.com/xpzouying/xiaohongshu-mcp/internal/domain/publish"
 	"github.com/xpzouying/xiaohongshu-mcp/xiaohongshu"
 )
@@ -669,6 +670,20 @@ func (s *AppServer) handleGetFeedDetail(ctx context.Context, args map[string]any
 
 	result, err := s.xiaohongshuService.GetFeedDetailWithConfig(ctx, feedID, xsecToken, loadAll, config)
 	if err != nil {
+		// 检查是否是笔记不可访问错误
+		var notAccessibleErr *apperrors.ErrFeedNotAccessible
+		if errors.As(err, &notAccessibleErr) {
+			// 笔记不可访问，返回友好提示而不是错误
+			return &MCPToolResult{
+				Content: []MCPContent{{
+					Type: "text",
+					Text: fmt.Sprintf("⚠️ 笔记不可访问\n\nFeed ID: %s\n原因: %s\n\n可能的原因：\n- 笔记已被作者删除\n- 笔记因违规被平台删除\n- 笔记设置为私密，仅作者可见\n- 笔记暂时无法访问", feedID, notAccessibleErr.Reason),
+				}},
+				IsError: false, // 不标记为错误，因为这是预期的业务场景
+			}
+		}
+
+		// 其他错误正常返回
 		return &MCPToolResult{
 			Content: []MCPContent{{
 				Type: "text",
